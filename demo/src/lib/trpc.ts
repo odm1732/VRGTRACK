@@ -1,16 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import * as api from "@/demo/api";
-import { bump, useStoreVersion } from "@/demo/store";
+import { useCallback, useRef, useState } from "react";
+import { useEffect } from "react";
+import {
+  api,
+  bump,
+  clearToken,
+  isAuthed,
+  reviveMember,
+  reviveSubmission,
+  setToken,
+  useDataVersion,
+  type Member,
+  type ParsedSubmission,
+  type RawTypes,
+} from "@/lib/api";
 
 /**
- * A drop-in replacement for the app's tRPC client that resolves against the
- * in-browser demo dataset instead of a server. It exposes the same surface the
- * pages use — `useQuery`, `useMutation`, `useUtils()` — so no page or component
- * needed to change to run without a backend.
+ * tRPC-shaped data layer over the real API, so the pages (written against
+ * the original app's tRPC client) run unchanged. Queries re-run whenever a
+ * mutation succeeds or auth changes.
  */
-
-/** Small artificial delay so skeletons and pending states are visible. */
-const LATENCY_MS = 220;
 
 type QueryOptions = {
   enabled?: boolean;
@@ -23,43 +31,16 @@ type MutationOptions<TOutput> = {
   onError?: (error: { message: string }) => void;
 };
 
-type QueryEndpoint<TInput, TOutput> = {
-  useQuery: (
-    input?: TInput,
-    options?: QueryOptions
-  ) => {
-    data: TOutput | undefined;
-    isLoading: boolean;
-    error: null;
-    refetch: () => Promise<{ data: TOutput }>;
-  };
-  /** Re-resolves every mounted instance of this query. */
-  invalidate: () => Promise<void>;
-  /** Present for API parity; the demo store is the single source of truth. */
-  setData: (input?: TInput, value?: TOutput) => void;
-};
-
-type MutationEndpoint<TInput, TOutput> = {
-  useMutation: (options?: MutationOptions<TOutput>) => {
-    mutate: (input: TInput) => void;
-    mutateAsync: (input: TInput) => Promise<TOutput>;
-    isPending: boolean;
-    error: null;
-  };
-};
-
-function query<TInput, TOutput>(resolve: (input: TInput) => TOutput): QueryEndpoint<TInput, TOutput> {
+function query<TInput, TOutput>(resolve: (input: TInput) => Promise<TOutput>) {
   return {
     useQuery(input?: TInput, options?: QueryOptions) {
       const enabled = options?.enabled !== false;
-      const version = useStoreVersion();
+      const version = useDataVersion();
       const key = JSON.stringify(input ?? null);
       const [state, setState] = useState<{ data: TOutput | undefined; isLoading: boolean }>({
         data: undefined,
         isLoading: enabled,
       });
-
-      // Keep the latest input available to refetch without re-creating it per render.
       const inputRef = useRef(input);
       inputRef.current = input;
 
@@ -70,19 +51,20 @@ function query<TInput, TOutput>(resolve: (input: TInput) => TOutput): QueryEndpo
         }
         let cancelled = false;
         setState((prev) => ({ data: prev.data, isLoading: prev.data === undefined }));
-        const timer = setTimeout(() => {
-          if (cancelled) return;
-          setState({ data: resolve(inputRef.current as TInput), isLoading: false });
-        }, LATENCY_MS);
+        resolve(inputRef.current as TInput)
+          .then((data) => {
+            if (!cancelled) setState({ data, isLoading: false });
+          })
+          .catch(() => {
+            if (!cancelled) setState((prev) => ({ data: prev.data, isLoading: false }));
+          });
         return () => {
           cancelled = true;
-          clearTimeout(timer);
         };
-        // `key` covers input changes; `version` covers store mutations.
       }, [key, version, enabled]);
 
       const refetch = useCallback(async () => {
-        const data = resolve(inputRef.current as TInput);
+        const data = await resolve(inputRef.current as TInput);
         setState({ data, isLoading: false });
         return { data };
       }, []);
@@ -94,34 +76,28 @@ function query<TInput, TOutput>(resolve: (input: TInput) => TOutput): QueryEndpo
   };
 }
 
-function mutation<TInput, TOutput>(
-  run: (input: TInput) => TOutput
-): MutationEndpoint<TInput, TOutput> {
+function mutation<TInput, TOutput>(run: (input: TInput) => Promise<TOutput>) {
   return {
     useMutation(options?: MutationOptions<TOutput>) {
       const [isPending, setIsPending] = useState(false);
+      const optsRef = useRef(options);
+      optsRef.current = options;
 
-      const mutateAsync = useCallback(
-        (input: TInput) =>
-          new Promise<TOutput>((resolve, reject) => {
-            setIsPending(true);
-            setTimeout(() => {
-              try {
-                const result = run(input);
-                setIsPending(false);
-                options?.onSuccess?.(result);
-                resolve(result);
-              } catch (err) {
-                setIsPending(false);
-                const message = err instanceof Error ? err.message : "Something went wrong.";
-                options?.onError?.({ message });
-                reject(err instanceof Error ? err : new Error(message));
-              }
-            }, LATENCY_MS);
-          }),
-        // Handlers are read at call time from the latest closure.
-        [options?.onSuccess, options?.onError]
-      );
+      const mutateAsync = useCallback(async (input: TInput) => {
+        setIsPending(true);
+        try {
+          const result = await run(input);
+          setIsPending(false);
+          bump(); // refresh every live query after a successful write
+          optsRef.current?.onSuccess?.(result);
+          return result;
+        } catch (e) {
+          setIsPending(false);
+          const message = e instanceof Error ? e.message : "Something went wrong.";
+          optsRef.current?.onError?.({ message });
+          throw e instanceof Error ? e : new Error(message);
+        }
+      }, []);
 
       const mutate = useCallback(
         (input: TInput) => {
@@ -137,41 +113,147 @@ function mutation<TInput, TOutput>(
   };
 }
 
+// ─── Shared fetch helpers ─────────────────────────────────────────────────────
+
+type RawMember = RawTypes["member"];
+type RawSubmission = RawTypes["submission"];
+
+type SummaryPayload = {
+  year: number;
+  monthName: string;
+  ytd: { referrals: number; oneToOnes: number; money: number; visitors: number };
+  month: { referrals: number; oneToOnes: number; money: number; visitors: number };
+  goals: { year: number; referrals: number; oneToOnes: number; money: number; visitors: number } | null;
+};
+
+const fetchSummary = () => api<SummaryPayload>("summary");
+
+async function fetchReport(fromDate: Date, toDate: Date) {
+  const q = `from=${encodeURIComponent(fromDate.toISOString())}&to=${encodeURIComponent(toDate.toISOString())}`;
+  const r = await api<{ submissions: RawSubmission[]; members: RawMember[] }>(`admin/report?${q}`);
+  return {
+    submissions: r.submissions.map(reviveSubmission),
+    members: r.members.map(reviveMember),
+  };
+}
+
+const ADMIN_USER = { id: 1, name: "VRG Admin", email: null as string | null, role: "admin" as const };
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 const router = {
   auth: {
-    me: query(() => api.me()),
-    logout: mutation(() => api.logout()),
-    login: mutation(api.login),
-    register: mutation(api.register),
-    requestPasswordReset: mutation(api.requestPasswordReset),
-    resetPassword: mutation(api.resetPassword),
+    me: query(async () => (isAuthed() ? ADMIN_USER : null)),
+    logout: mutation(async () => {
+      clearToken();
+      return { success: true } as const;
+    }),
+    login: mutation(async (input: { password: string }) => {
+      const r = await api<{ token: string }>("login", { method: "POST", body: { password: input.password } });
+      setToken(r.token);
+      return { success: true } as const;
+    }),
   },
   dashboard: {
-    stats: query(() => api.stats()),
-    weeklyReport: query(api.weeklyReport),
-    memberReport: query(api.memberReport),
-    absenceSummary: query(api.absenceSummary),
+    stats: query(async () => {
+      const year = new Date().getFullYear();
+      const { submissions, members } = await fetchReport(
+        new Date(year, 0, 1),
+        new Date(year, 11, 31, 23, 59, 59)
+      );
+      return {
+        totalSubmissions: submissions.length,
+        totalMembers: members.filter((m) => m.active).length,
+      };
+    }),
+    weeklyReport: query(async (input: { fromDate: Date; toDate: Date }) => {
+      const { submissions, members } = await fetchReport(input.fromDate, input.toDate);
+      const memberMap = new Map(members.map((m) => [m.id, m]));
+      return submissions.map((s) => ({ ...s, member: memberMap.get(s.memberId) ?? null }));
+    }),
+    memberReport: query(async (input: { memberId: number }) => {
+      const r = await api<{ member: RawMember; submissions: RawSubmission[]; members: RawMember[] }>(
+        `admin/member-report?memberId=${input.memberId}`
+      );
+      return {
+        member: reviveMember(r.member),
+        submissions: r.submissions.map(reviveSubmission),
+        memberMap: Object.fromEntries(r.members.map((m) => [m.id, reviveMember(m)])),
+      };
+    }),
+    absenceSummary: query(async (input: { fromDate: Date; toDate: Date }) => {
+      const { submissions, members } = await fetchReport(input.fromDate, input.toDate);
+      const byMember = new Map<number, { member: Member; absences: ParsedSubmission[] }>(
+        members.filter((m) => m.active).map((m) => [m.id, { member: m, absences: [] }])
+      );
+      for (const s of submissions) {
+        if (!s.attended) byMember.get(s.memberId)?.absences.push(s);
+      }
+      return Array.from(byMember.values()).sort((a, b) => b.absences.length - a.absences.length);
+    }),
   },
   goals: {
-    ytdSummary: query(() => api.ytdSummary()),
-    monthSummary: query(() => api.monthSummary()),
-    set: mutation(api.setGoals),
+    ytdSummary: query(async () => {
+      const s = await fetchSummary();
+      return { ytd: s.ytd, goals: s.goals ? { ...s.goals, money: Number(s.goals.money) } : null };
+    }),
+    monthSummary: query(async () => {
+      const s = await fetchSummary();
+      return {
+        month: s.month,
+        monthName: s.monthName,
+        goals: s.goals ? { ...s.goals, money: Number(s.goals.money) } : null,
+      };
+    }),
+    set: mutation(
+      (input: { year: number; referrals: number; oneToOnes: number; money: number; visitors: number }) =>
+        api("admin/goals", { method: "PUT", body: input })
+    ),
   },
   members: {
-    list: query(() => api.listMembers()),
-    listAll: query(() => api.listAllMembers()),
-    create: mutation(api.createMember),
-    update: mutation(api.updateMember),
-    delete: mutation(api.deleteMember),
+    list: query(async () => (await api<RawMember[]>("members")).map(reviveMember)),
+    listAll: query(async () => (await api<RawMember[]>("admin/members")).map(reviveMember)),
+    create: mutation((input: { name: string; email?: string | null }) =>
+      api("admin/members", { method: "POST", body: input })
+    ),
+    update: mutation((input: { id: number; name?: string; email?: string | null; active?: boolean }) => {
+      const { id, ...body } = input;
+      return api(`admin/members/${id}`, { method: "PUT", body });
+    }),
+    delete: mutation((input: { id: number }) => api(`admin/members/${input.id}`, { method: "DELETE" })),
   },
   submissions: {
-    create: mutation(api.createSubmission),
-  },
-  users: {
-    listAll: query(() => api.listAllUsers()),
-    create: mutation(api.createUser),
-    updateRole: mutation(api.updateUserRole),
-    remove: mutation(api.removeUser),
+    create: mutation(
+      (input: {
+        memberId: number;
+        meetingDate: Date;
+        attended: boolean;
+        absenceReason?: string | null;
+        visitorsCount: number;
+        referrals?: { toMemberId: string; count: string }[];
+        oneToOnes?: number[];
+        moneyReceived?: { fromMemberId: string; amount: string }[];
+      }) =>
+        api("submissions", {
+          method: "POST",
+          body: {
+            memberId: input.memberId,
+            meetingDate: input.meetingDate.toISOString(),
+            attended: input.attended,
+            absenceReason: input.absenceReason ?? null,
+            visitorsCount: input.visitorsCount,
+            referrals: (input.referrals ?? []).map((r) => ({
+              toMemberId: Number(r.toMemberId),
+              count: Number(r.count) || 0,
+            })),
+            oneToOnes: input.oneToOnes ?? [],
+            moneyReceived: (input.moneyReceived ?? []).map((m) => ({
+              fromMemberId: Number(m.fromMemberId),
+              amount: Number(m.amount) || 0,
+            })),
+          },
+        })
+    ),
   },
 };
 

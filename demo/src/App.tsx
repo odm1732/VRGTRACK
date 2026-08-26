@@ -16,7 +16,6 @@ import AbsenceTrackingPage from "./pages/dashboard/AbsenceTrackingPage";
 import ManageMembersPage from "./pages/dashboard/ManageMembersPage";
 import ExportDataPage from "./pages/dashboard/ExportDataPage";
 import GoalsPage from "./pages/dashboard/GoalsPage";
-import UserManagementPage from "./pages/dashboard/UserManagementPage";
 
 function DashboardRoute({ children }: { children: React.ReactNode }) {
   return <DashboardLayout>{children}</DashboardLayout>;
@@ -52,9 +51,6 @@ function Routes() {
       </Route>
       <Route path="/dashboard/goals">
         <DashboardRoute><GoalsPage /></DashboardRoute>
-      </Route>
-      <Route path="/dashboard/users">
-        <DashboardRoute><UserManagementPage /></DashboardRoute>
       </Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

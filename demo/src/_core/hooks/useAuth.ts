@@ -1,38 +1,27 @@
-import { useCallback, useMemo } from "react";
-import { trpc } from "@/lib/trpc";
+import { useCallback } from "react";
+import { clearToken, isAuthed, useDataVersion } from "@/lib/api";
+
+const ADMIN_USER = { id: 1, name: "VRG Admin", email: null as string | null, role: "admin" as const };
 
 /**
- * Demo counterpart of the app's `useAuth`. Same return shape, but the session
- * lives in the browser demo store instead of a signed cookie.
+ * Auth is a shared admin password: POST /api/login issues a signed token
+ * kept in localStorage. Signed in = a valid, unexpired token.
  */
 export function useAuth() {
-  const utils = trpc.useUtils();
+  useDataVersion(); // re-render on sign-in/sign-out
 
-  const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
-
-  const logoutMutation = trpc.auth.logout.useMutation();
+  const authed = isAuthed();
 
   const logout = useCallback(async () => {
-    await logoutMutation.mutateAsync(undefined);
-    await utils.auth.me.invalidate();
-  }, [logoutMutation, utils]);
-
-  const state = useMemo(
-    () => ({
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: null,
-      isAuthenticated: Boolean(meQuery.data),
-    }),
-    [meQuery.data, meQuery.isLoading, logoutMutation.isPending]
-  );
+    clearToken();
+  }, []);
 
   return {
-    ...state,
-    refresh: () => meQuery.refetch(),
+    user: authed ? ADMIN_USER : null,
+    loading: false,
+    error: null,
+    isAuthenticated: authed,
+    refresh: () => {},
     logout,
   };
 }

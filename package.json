@@ -1,0 +1,13 @@
+{
+  "name": "vrgtrack",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Valley Referral Group weekly accountability tracker — static frontend + Cloudflare Pages Functions API on D1.",
+  "scripts": {
+    "dev": "wrangler pages dev demo/dist --d1 DB --binding ADMIN_PASSWORD=dev-password",
+    "build": "cd demo && npm run build"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

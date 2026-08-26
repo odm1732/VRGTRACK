@@ -5,12 +5,48 @@ each meeting — who they referred, who they met one-to-one, revenue that came b
 referrals, visitors they brought, and whether they attended — and the dashboard rolls it all
 up against the group's annual goals.
 
-This repository holds two things:
+This repository holds the live tracker and the original application it came from:
 
 | | |
 | --- | --- |
-| [`app/`](app) | The full-stack application: React + tRPC + Express + Drizzle/MySQL. Needs a database and environment config to run. |
-| [`demo/`](demo) | A self-contained, no-backend build of the same client, for showing the product without provisioning anything. |
+| [`demo/`](demo) | The live frontend (React, static build in `demo/dist/`), served by Cloudflare Pages. |
+| [`functions/`](functions) | The live API — Cloudflare Pages Functions backed by a D1 (SQLite) database. Deploys automatically with the Pages project. |
+| [`app/`](app) | The original full-stack application (React + tRPC + Express + Drizzle/MySQL), kept for reference. Not deployed. |
+
+## How the live site works
+
+- **Public**: the home page scoreboard (`GET /api/summary`) and the weekly report form
+  (`POST /api/submissions`) need no login — members just submit.
+- **Admin**: the dashboard (reports, member management, goals, export) is behind a shared
+  admin password. `POST /api/login` checks it against the `ADMIN_PASSWORD` environment
+  variable and issues a signed 30-day token.
+- **Data**: everything lives in a D1 database. On the very first request the API creates
+  its tables and, if empty, seeds the snapshot of the group's real totals through
+  Aug 19, 2026 (`functions/api/seedData.json`). No migration tooling needed.
+
+## Cloudflare setup (one time)
+
+The Pages project itself is already connected to this repo. To activate the backend:
+
+1. **Create the database** — dashboard → Storage & Databases → D1 → Create → name it
+   `vrgtrack`.
+2. **Bind it** — Workers & Pages → the Pages project → Settings → Bindings →
+   Add → D1 database → variable name `DB` → select `vrgtrack`.
+3. **Set the admin password** — same Settings → Variables and Secrets → Add →
+   name `ADMIN_PASSWORD`, type Secret, value = the password the leadership team will use.
+4. **Redeploy** — Deployments → latest → Retry deployment (bindings only apply to new
+   deployments).
+
+Visit the site: the first request seeds the database, and the dashboard accepts the
+password you set.
+
+## Local development
+
+```sh
+npm install && cd demo && npm install && cd ..
+npm run build   # rebuild the frontend into demo/dist
+npm run dev     # wrangler serves demo/dist + the API with a local D1 (password: dev-password)
+```
 
 ## `app/` — the real application
 
