@@ -355,7 +355,7 @@ function DashboardLayoutContent({ children, setSidebarWidth }: DashboardLayoutCo
                     </div>
                     <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                       <span className="font-semibold text-sm">VRG Accountability</span>
-                      <span className="text-xs text-muted-foreground">Networking Group</span>
+                      <span className="text-xs text-muted-foreground">Valley Referral Group</span>
                     </div>
                   </div>
                 </SidebarMenuButton>

@@ -1,6 +1,6 @@
 import type { DemoState, Goal, Member, Submission, User } from "./types";
 
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2;
 
 /** Credentials shown on the demo sign-in screen. */
 export const DEMO_ADMIN_EMAIL = "admin@vrgdemo.com";
@@ -20,23 +20,34 @@ function mulberry32(seed: number) {
   };
 }
 
-const MEMBER_SEED: { name: string; email: string; active?: boolean }[] = [
-  { name: "Dana Whitfield", email: "dana@whitfieldcpa.com" },
-  { name: "Marcus Ellison", email: "marcus@ellisonroofing.com" },
-  { name: "Priya Raghunathan", email: "priya@raghunathanlaw.com" },
-  { name: "Tom Vasquez", email: "tom@vasquezplumbing.com" },
-  { name: "Sheila Brandt", email: "sheila@brandtinsurance.com" },
-  { name: "Kevin Okafor", email: "kevin@okaforlending.com" },
-  { name: "Rachel Lindstrom", email: "rachel@lindstromdesign.co" },
-  { name: "Andre Boateng", email: "andre@boatengfitness.com" },
-  { name: "Julia Kowalski", email: "julia@kowalskirealty.com" },
-  { name: "Ben Ferraro", email: "ben@ferraroelectric.com" },
-  { name: "Nadia Hassan", email: "nadia@hassanchiropractic.com" },
-  { name: "Grant Mueller", email: "grant@muellerlandscape.com" },
-  { name: "Camille Duval", email: "camille@duvalphotography.com" },
-  { name: "Wes Tanaka", email: "wes@tanakaautobody.com" },
-  { name: "Holly Prentice", email: "holly@prenticetravel.com", active: false },
-  { name: "Rob Sandoval", email: "rob@sandovalhvac.com", active: false },
+/**
+ * The real Valley Referral Group roster (Tuesday 8:00–9:30am). Names only —
+ * the roster's phone numbers and birth dates are deliberately left out, and
+ * no per-member emails exist on it.
+ */
+const MEMBER_SEED: { name: string; email?: string | null; active?: boolean }[] = [
+  { name: "Alan Stamp" },
+  { name: "Arturo and Mariela Suarez" },
+  { name: "Bev Cundiff" },
+  { name: "Chris McVey" },
+  { name: "Daley Goff" },
+  { name: "Darren Crosier" },
+  { name: "David Heller" },
+  { name: "Dustin Cason" },
+  { name: "Dylan Clark" },
+  { name: "Jeff Williams" },
+  { name: "Jordan Taylor" },
+  { name: "Josh Cole" },
+  { name: "Jonathan Tinnin" },
+  { name: "Michelle Fix" },
+  { name: "Pat Kincheloe" },
+  { name: "Ralph Smith" },
+  { name: "Sandy Zamalis" },
+  { name: "Sarah Fowler" },
+  { name: "Scott Danielson" },
+  { name: "Shelton Mason" },
+  { name: "Tina Raybon" },
+  { name: "Teresa Whitesell" },
 ];
 
 const ABSENCE_REASONS = [
@@ -50,20 +61,18 @@ const ABSENCE_REASONS = [
 
 const USER_SEED: { name: string; email: string; role: "admin" | "user"; loginMethod: string }[] = [
   { name: "Demo Admin", email: DEMO_ADMIN_EMAIL, role: "admin", loginMethod: "password" },
-  { name: "Dana Whitfield", email: "dana@whitfieldcpa.com", role: "admin", loginMethod: "password" },
-  { name: "Kevin Okafor", email: "kevin@okaforlending.com", role: "user", loginMethod: "google" },
-  { name: "Julia Kowalski", email: "julia@kowalskirealty.com", role: "user", loginMethod: "password" },
+  { name: "Valley Referral Group", email: "networkwithvrg@gmail.com", role: "user", loginMethod: "google" },
 ];
 
-/** Every Wednesday of `year` that has already happened, up to and including today. */
+/** Every Tuesday of `year` that has already happened, up to and including today. */
 function meetingDates(year: number, today: Date): Date[] {
   const dates: Date[] = [];
   const cursor = new Date(year, 0, 1);
-  // advance to the first Wednesday (day 3)
-  cursor.setDate(cursor.getDate() + ((3 - cursor.getDay() + 7) % 7));
+  // advance to the first Tuesday (day 2)
+  cursor.setDate(cursor.getDate() + ((2 - cursor.getDay() + 7) % 7));
   const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
   while (cursor.getFullYear() === year && cursor <= cutoff) {
-    dates.push(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 7, 30, 0));
+    dates.push(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 8, 0, 0));
     cursor.setDate(cursor.getDate() + 7);
   }
   return dates;
@@ -78,6 +87,17 @@ function pickDistinct(rand: () => number, pool: number[], count: number): number
   return out;
 }
 
+/**
+ * Closed-business amounts span handyman invoices to real-estate closings, so
+ * draw from a mixture: mostly small jobs, some mid-size, the odd big close.
+ */
+function moneyAmount(rand: () => number): number {
+  const roll = rand();
+  if (roll < 0.7) return Math.round((800 + rand() * 8200) / 50) * 50;
+  if (roll < 0.95) return Math.round((10000 + rand() * 35000) / 250) * 250;
+  return Math.round((60000 + rand() * 90000) / 1000) * 1000;
+}
+
 export function buildSeedState(now: Date = new Date()): DemoState {
   const year = now.getFullYear();
   const rand = mulberry32(0x5652_4700 ^ year);
@@ -86,7 +106,7 @@ export function buildSeedState(now: Date = new Date()): DemoState {
   const members: Member[] = MEMBER_SEED.map((m, i) => ({
     id: i + 1,
     name: m.name,
-    email: m.email,
+    email: m.email ?? null,
     active: m.active !== false,
     createdAt: jan1,
     updatedAt: jan1,
@@ -96,6 +116,9 @@ export function buildSeedState(now: Date = new Date()): DemoState {
   const submissions: Submission[] = [];
   let submissionId = 1;
 
+  // Weekly activity is generated (no submission history was exported), with
+  // rates tuned so the year-to-date tracks plausibly against the real 2026
+  // goals: 200 referrals, 350 one-to-ones, $5M closed business, 20 visitors.
   for (const meetingDate of meetingDates(year, now)) {
     for (const memberId of activeIds) {
       // A couple of members skip filing a report on any given week.
@@ -121,26 +144,25 @@ export function buildSeedState(now: Date = new Date()): DemoState {
       const others = activeIds.filter((id) => id !== memberId);
 
       const referralRoll = rand();
-      const referralCount = referralRoll < 0.34 ? 0 : referralRoll < 0.78 ? 1 : referralRoll < 0.95 ? 2 : 3;
+      const referralCount = referralRoll < 0.79 ? 0 : referralRoll < 0.97 ? 1 : 2;
       const referrals = pickDistinct(rand, others, referralCount).map((toMemberId) => ({
         toMemberId,
-        count: rand() < 0.82 ? 1 : 2,
+        count: 1,
       }));
 
       const otoRoll = rand();
-      const otoCount = otoRoll < 0.3 ? 0 : otoRoll < 0.72 ? 1 : otoRoll < 0.93 ? 2 : 3;
+      const otoCount = otoRoll < 0.66 ? 0 : otoRoll < 0.96 ? 1 : 2;
       const oneToOnes = pickDistinct(rand, others, otoCount);
 
       const moneyReceived =
-        rand() < 0.24
+        rand() < 0.28
           ? pickDistinct(rand, others, 1).map((fromMemberId) => ({
               fromMemberId,
-              amount: Math.round((350 + rand() * 7600) / 25) * 25,
+              amount: moneyAmount(rand),
             }))
           : [];
 
-      const visitorRoll = rand();
-      const visitorsCount = visitorRoll < 0.9 ? 0 : visitorRoll < 0.985 ? 1 : 2;
+      const visitorsCount = rand() < 0.022 ? 1 : 0;
 
       submissions.push({
         id: submissionId++,
@@ -157,14 +179,15 @@ export function buildSeedState(now: Date = new Date()): DemoState {
     }
   }
 
+  // The group's real annual goals, from the meeting agenda.
   const goals: Goal[] = [
     {
       id: 1,
       year,
-      referrals: 750,
-      oneToOnes: 600,
-      money: 600000,
-      visitors: 60,
+      referrals: 200,
+      oneToOnes: 350,
+      money: 5000000,
+      visitors: 20,
       createdAt: jan1,
       updatedAt: jan1,
     },

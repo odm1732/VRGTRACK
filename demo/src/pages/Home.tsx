@@ -75,10 +75,10 @@ export default function Home() {
       <section className="border-b bg-muted/30 py-16">
         <div className="container text-center space-y-4">
           <h1 className="text-4xl font-bold tracking-tight">
-            VRG Networking Group
+            Valley Referral Group
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Track referrals, one-to-ones, money exchanged, and visitor attendance across the group.
+            A group of friendly, active business professionals committed to weekly meetings — tracking referrals, one-to-ones, closed business, and visitors across the group.
           </p>
           <div className="flex items-center justify-center gap-3 pt-2">
             <Button size="lg" asChild>
