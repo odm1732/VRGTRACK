@@ -72,7 +72,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard icon={Users} label="Referrals" value={ytd?.ytd.referrals ?? 0} goal={ytd?.goals?.referrals} color="text-blue-500" />
               <StatCard icon={Target} label="One-to-Ones" value={ytd?.ytd.oneToOnes ?? 0} goal={ytd?.goals?.oneToOnes} color="text-purple-500" />
-              <StatCard icon={DollarSign} label="Money Exchanged" value={ytd?.ytd.money ?? 0} goal={ytd?.goals?.money} unit="$" color="text-green-500" />
+              <StatCard icon={DollarSign} label="Money Received" value={ytd?.ytd.money ?? 0} goal={ytd?.goals?.money} unit="$" color="text-green-500" />
               <StatCard icon={BarChart3} label="Visitors" value={ytd?.ytd.visitors ?? 0} goal={ytd?.goals?.visitors} color="text-orange-500" />
             </div>
           </div>
@@ -83,7 +83,7 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard icon={Users} label="Referrals" value={month.month.referrals} color="text-blue-500" />
                 <StatCard icon={Target} label="One-to-Ones" value={month.month.oneToOnes} color="text-purple-500" />
-                <StatCard icon={DollarSign} label="Money Exchanged" value={month.month.money} unit="$" color="text-green-500" />
+                <StatCard icon={DollarSign} label="Money Received" value={month.month.money} unit="$" color="text-green-500" />
                 <StatCard icon={BarChart3} label="Visitors" value={month.month.visitors} color="text-orange-500" />
               </div>
             </div>

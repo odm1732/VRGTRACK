@@ -51,7 +51,7 @@ export default function GoalsPage() {
   const metrics = [
     { label: "Referrals", ytdVal: ytd?.ytd.referrals ?? 0, goal: ytd?.goals?.referrals ?? 0 },
     { label: "One-to-Ones", ytdVal: ytd?.ytd.oneToOnes ?? 0, goal: ytd?.goals?.oneToOnes ?? 0 },
-    { label: "Money Exchanged ($)", ytdVal: ytd?.ytd.money ?? 0, goal: ytd?.goals?.money ?? 0 },
+    { label: "Money Received ($)", ytdVal: ytd?.ytd.money ?? 0, goal: ytd?.goals?.money ?? 0 },
     { label: "Visitors", ytdVal: ytd?.ytd.visitors ?? 0, goal: ytd?.goals?.visitors ?? 0 },
   ];
 
@@ -87,7 +87,7 @@ export default function GoalsPage() {
                   <Input type="number" min={0} value={oneToOnes} onChange={(e) => setOneToOnes(e.target.value)} placeholder="e.g. 200" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Money Exchanged Goal ($)</Label>
+                  <Label>Money Received Goal ($)</Label>
                   <Input type="number" min={0} value={money} onChange={(e) => setMoney(e.target.value)} placeholder="e.g. 100000" />
                 </div>
                 <div className="space-y-1.5">

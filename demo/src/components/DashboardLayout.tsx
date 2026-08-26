@@ -145,12 +145,11 @@ function SignInGate({ onSuccess }: { onSuccess: () => void }) {
 
         <div className="w-full rounded-lg border border-dashed bg-muted/40 p-3 text-center space-y-2">
           <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Demo mode.</span> The admin credentials are
-            pre-filled below — any password is accepted. Sign in with a different email to see the
-            read-only member view.
+            <span className="font-medium text-foreground">Quick access.</span> The admin credentials
+            are pre-filled below — any password is accepted.
           </p>
           <Button size="sm" variant="secondary" className="w-full" onClick={handleDemoSignIn}>
-            Skip sign-in — explore as admin
+            Continue as admin
           </Button>
         </div>
 

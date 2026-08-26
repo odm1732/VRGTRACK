@@ -53,14 +53,16 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-40">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+        <div className="container flex h-16 items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
               <BarChart3 className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg">VRG Accountability</span>
+            <span className="font-bold text-lg whitespace-nowrap">
+              VRG<span className="hidden sm:inline"> Accountability</span>
+            </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Button variant="outline" asChild>
               <Link href="/submit">Submit Report</Link>
             </Button>
@@ -109,7 +111,7 @@ export default function Home() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard icon={Users} label="Referrals" value={ytd?.ytd.referrals ?? 0} goal={ytd?.goals?.referrals ?? null} />
               <StatCard icon={Target} label="One-to-Ones" value={ytd?.ytd.oneToOnes ?? 0} goal={ytd?.goals?.oneToOnes ?? null} />
-              <StatCard icon={DollarSign} label="Money Exchanged" value={ytd?.ytd.money ?? 0} goal={ytd?.goals?.money ?? null} unit="$" />
+              <StatCard icon={DollarSign} label="Money Received" value={ytd?.ytd.money ?? 0} goal={ytd?.goals?.money ?? null} unit="$" />
               <StatCard icon={BarChart3} label="Visitors" value={ytd?.ytd.visitors ?? 0} goal={ytd?.goals?.visitors ?? null} />
             </div>
           )}
@@ -120,7 +122,7 @@ export default function Home() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard icon={Users} label="Referrals" value={month.month.referrals} goal={null} />
                 <StatCard icon={Target} label="One-to-Ones" value={month.month.oneToOnes} goal={null} />
-                <StatCard icon={DollarSign} label="Money Exchanged" value={month.month.money} goal={null} unit="$" />
+                <StatCard icon={DollarSign} label="Money Received" value={month.month.money} goal={null} unit="$" />
                 <StatCard icon={BarChart3} label="Visitors" value={month.month.visitors} goal={null} />
               </div>
             </>

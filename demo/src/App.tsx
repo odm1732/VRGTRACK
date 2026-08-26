@@ -3,7 +3,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Router, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import DemoBar from "./components/DemoBar";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -73,7 +72,6 @@ function App() {
           <Router hook={useHashLocation}>
             <Routes />
           </Router>
-          <DemoBar />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
