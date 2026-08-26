@@ -21,8 +21,9 @@ function load(): DemoState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as DemoState;
-      const currentYear = new Date().getFullYear();
-      if (parsed.seedVersion === SEED_VERSION && parsed.seedYear === currentYear) {
+      // The dataset is a fixed snapshot (through Aug 19, 2026), so only the
+      // seed version matters — no re-seeding on a calendar-year rollover.
+      if (parsed.seedVersion === SEED_VERSION) {
         reviveDates(parsed.members);
         reviveDates(parsed.submissions);
         reviveDates(parsed.goals);
@@ -71,7 +72,7 @@ export function bump() {
   emit();
 }
 
-/** Throw away local edits and rebuild the sample dataset for the current year. */
+/** Throw away local edits and rebuild the seeded dataset. */
 export function resetDemoData() {
   state = buildSeedState();
   save(state);

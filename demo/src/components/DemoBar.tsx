@@ -35,9 +35,10 @@ export default function DemoBar() {
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1 space-y-2">
           <p className="text-xs leading-relaxed text-muted-foreground">
-            <span className="font-semibold text-foreground">Interactive demo.</span> All members,
-            reports and revenue figures are generated sample data. Edits are saved in this browser
-            only — nothing is sent anywhere.
+            <span className="font-semibold text-foreground">Interactive demo.</span> Totals reflect
+            the group's real numbers through Aug 19, 2026; the week-by-week breakdown is
+            approximated from them. Edits are saved in this browser only — nothing is sent
+            anywhere.
           </p>
           <Button
             variant="outline"

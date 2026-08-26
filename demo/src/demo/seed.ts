@@ -1,10 +1,21 @@
 import type { DemoState, Goal, Member, Submission, User } from "./types";
 
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 4;
 
 /** Credentials shown on the demo sign-in screen. */
 export const DEMO_ADMIN_EMAIL = "admin@vrgdemo.com";
 export const DEMO_ADMIN_PASSWORD = "vrgdemo123";
+
+/**
+ * Real group totals as reported from the live tracker. The last recorded
+ * activity was August 19, 2026, so meetings are generated from January 1
+ * through that date and nothing after it. The rollups match these figures
+ * exactly; the per-member weekly breakdown is approximated from them, since
+ * only the totals survived.
+ */
+const DATA_END = { year: 2026, month: 7, day: 19 }; // Aug 19, 2026
+const YTD = { referrals: 154, oneToOnes: 391, money: 2_037_230, visitors: 29 };
+const MTD = { referrals: 10, oneToOnes: 42, money: 27_198, visitors: 2 }; // August
 
 /**
  * Deterministic PRNG so every visitor sees the same numbers, and so a page
@@ -64,44 +75,91 @@ const USER_SEED: { name: string; email: string; role: "admin" | "user"; loginMet
   { name: "Valley Referral Group", email: "networkwithvrg@gmail.com", role: "user", loginMethod: "google" },
 ];
 
-/** Every Tuesday of `year` that has already happened, up to and including today. */
-function meetingDates(year: number, today: Date): Date[] {
+/** Every Tuesday from January 1 of the data year through the data-end date. */
+function meetingDates(): Date[] {
   const dates: Date[] = [];
-  const cursor = new Date(year, 0, 1);
-  // advance to the first Tuesday (day 2)
-  cursor.setDate(cursor.getDate() + ((2 - cursor.getDay() + 7) % 7));
-  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-  while (cursor.getFullYear() === year && cursor <= cutoff) {
+  const cursor = new Date(DATA_END.year, 0, 1);
+  cursor.setDate(cursor.getDate() + ((2 - cursor.getDay() + 7) % 7)); // first Tuesday
+  const cutoff = new Date(DATA_END.year, DATA_END.month, DATA_END.day, 23, 59, 59);
+  while (cursor <= cutoff) {
     dates.push(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 8, 0, 0));
     cursor.setDate(cursor.getDate() + 7);
   }
   return dates;
 }
 
-function pickDistinct(rand: () => number, pool: number[], count: number): number[] {
-  const copy = [...pool];
-  const out: number[] = [];
-  for (let i = 0; i < count && copy.length > 0; i++) {
-    out.push(copy.splice(Math.floor(rand() * copy.length), 1)[0]);
-  }
-  return out;
+/** Mutable submission under construction, before JSON serialization. */
+type DraftSub = {
+  memberId: number;
+  meetingDate: Date;
+  attended: boolean;
+  absenceReason: string | null;
+  visitorsCount: number;
+  refs: { toMemberId: number; count: number }[];
+  otos: number[];
+  moneys: { fromMemberId: number; amount: number }[];
+};
+
+function pickOther(rand: () => number, activeIds: number[], memberId: number): number {
+  const others = activeIds.filter((id) => id !== memberId);
+  return others[Math.floor(rand() * others.length)];
 }
 
 /**
- * Closed-business amounts span handyman invoices to real-estate closings, so
- * draw from a mixture: mostly small jobs, some mid-size, the odd big close.
+ * Spread exact metric totals across a pool of attended submissions so the
+ * period's rollup matches the real reported numbers to the dollar.
  */
-function moneyAmount(rand: () => number): number {
-  const roll = rand();
-  if (roll < 0.7) return Math.round((800 + rand() * 8200) / 50) * 50;
-  if (roll < 0.95) return Math.round((10000 + rand() * 35000) / 250) * 250;
-  return Math.round((60000 + rand() * 90000) / 1000) * 1000;
+function allocateExact(
+  rand: () => number,
+  pool: DraftSub[],
+  activeIds: number[],
+  targets: { referrals: number; oneToOnes: number; money: number; visitors: number }
+) {
+  if (pool.length === 0) return;
+  const pick = () => pool[Math.floor(rand() * pool.length)];
+
+  for (let i = 0; i < targets.referrals; i++) {
+    const s = pick();
+    s.refs.push({ toMemberId: pickOther(rand, activeIds, s.memberId), count: 1 });
+  }
+
+  for (let i = 0; i < targets.oneToOnes; i++) {
+    // One-to-ones are unique per submission (checkbox list in the form), so
+    // retry until a submission with a free counterpart turns up.
+    for (let tries = 0; tries < 60; tries++) {
+      const s = pick();
+      const free = activeIds.filter((id) => id !== s.memberId && !s.otos.includes(id));
+      if (free.length > 0) {
+        s.otos.push(free[Math.floor(rand() * free.length)]);
+        break;
+      }
+    }
+  }
+
+  for (let i = 0; i < targets.visitors; i++) {
+    pick().visitorsCount += 1;
+  }
+
+  if (targets.money > 0) {
+    // Split the exact dollar total across a realistic number of closes.
+    const events = Math.max(1, Math.min(pool.length, Math.round(targets.money / 30_000) + 3));
+    const weights = Array.from({ length: events }, () => 0.25 + rand());
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+    let remaining = targets.money;
+    for (let i = 0; i < events; i++) {
+      const amount =
+        i === events - 1 ? remaining : Math.min(remaining, Math.round((targets.money * weights[i]) / weightSum));
+      if (amount <= 0) continue;
+      remaining -= amount;
+      const s = pick();
+      s.moneys.push({ fromMemberId: pickOther(rand, activeIds, s.memberId), amount });
+    }
+  }
 }
 
 export function buildSeedState(now: Date = new Date()): DemoState {
-  const year = now.getFullYear();
-  const rand = mulberry32(0x5652_4700 ^ year);
-  const jan1 = new Date(year, 0, 1, 9, 0, 0);
+  const rand = mulberry32(0x5652_4700 ^ DATA_END.year);
+  const jan1 = new Date(DATA_END.year, 0, 1, 9, 0, 0);
 
   const members: Member[] = MEMBER_SEED.map((m, i) => ({
     id: i + 1,
@@ -113,77 +171,67 @@ export function buildSeedState(now: Date = new Date()): DemoState {
   }));
 
   const activeIds = members.filter((m) => m.active).map((m) => m.id);
-  const submissions: Submission[] = [];
-  let submissionId = 1;
 
-  // Weekly activity is generated (no submission history was exported), with
-  // rates tuned so the year-to-date tracks plausibly against the real 2026
-  // goals: 200 referrals, 350 one-to-ones, $5M closed business, 20 visitors.
-  for (const meetingDate of meetingDates(year, now)) {
+  // Attendance first, activity second: the exact totals are then spread
+  // across whoever attended in each period.
+  const drafts: DraftSub[] = [];
+  for (const meetingDate of meetingDates()) {
     for (const memberId of activeIds) {
-      // A couple of members skip filing a report on any given week.
-      if (rand() < 0.06) continue;
-
+      if (rand() < 0.06) continue; // skipped filing a report that week
       const attended = rand() > 0.11;
-      if (!attended) {
-        submissions.push({
-          id: submissionId++,
-          memberId,
-          meetingDate,
-          attended: false,
-          absenceReason: ABSENCE_REASONS[Math.floor(rand() * ABSENCE_REASONS.length)],
-          visitorsCount: 0,
-          referrals: null,
-          oneToOnes: null,
-          moneyReceived: null,
-          createdAt: meetingDate,
-        });
-        continue;
-      }
-
-      const others = activeIds.filter((id) => id !== memberId);
-
-      const referralRoll = rand();
-      const referralCount = referralRoll < 0.79 ? 0 : referralRoll < 0.97 ? 1 : 2;
-      const referrals = pickDistinct(rand, others, referralCount).map((toMemberId) => ({
-        toMemberId,
-        count: 1,
-      }));
-
-      const otoRoll = rand();
-      const otoCount = otoRoll < 0.66 ? 0 : otoRoll < 0.96 ? 1 : 2;
-      const oneToOnes = pickDistinct(rand, others, otoCount);
-
-      const moneyReceived =
-        rand() < 0.28
-          ? pickDistinct(rand, others, 1).map((fromMemberId) => ({
-              fromMemberId,
-              amount: moneyAmount(rand),
-            }))
-          : [];
-
-      const visitorsCount = rand() < 0.022 ? 1 : 0;
-
-      submissions.push({
-        id: submissionId++,
+      drafts.push({
         memberId,
         meetingDate,
-        attended: true,
-        absenceReason: null,
-        visitorsCount,
-        referrals: referrals.length ? JSON.stringify(referrals) : null,
-        oneToOnes: oneToOnes.length ? JSON.stringify(oneToOnes) : null,
-        moneyReceived: moneyReceived.length ? JSON.stringify(moneyReceived) : null,
-        createdAt: meetingDate,
+        attended,
+        absenceReason: attended
+          ? null
+          : ABSENCE_REASONS[Math.floor(rand() * ABSENCE_REASONS.length)],
+        visitorsCount: 0,
+        refs: [],
+        otos: [],
+        moneys: [],
       });
     }
   }
+
+  const monthStart = new Date(DATA_END.year, DATA_END.month, 1);
+  allocateExact(
+    rand,
+    drafts.filter((s) => s.attended && s.meetingDate < monthStart),
+    activeIds,
+    {
+      referrals: YTD.referrals - MTD.referrals,
+      oneToOnes: YTD.oneToOnes - MTD.oneToOnes,
+      money: YTD.money - MTD.money,
+      visitors: YTD.visitors - MTD.visitors,
+    }
+  );
+  allocateExact(
+    rand,
+    drafts.filter((s) => s.attended && s.meetingDate >= monthStart),
+    activeIds,
+    MTD
+  );
+
+  let submissionId = 1;
+  const submissions: Submission[] = drafts.map((s) => ({
+    id: submissionId++,
+    memberId: s.memberId,
+    meetingDate: s.meetingDate,
+    attended: s.attended,
+    absenceReason: s.absenceReason,
+    visitorsCount: s.visitorsCount,
+    referrals: s.refs.length ? JSON.stringify(s.refs) : null,
+    oneToOnes: s.otos.length ? JSON.stringify(s.otos) : null,
+    moneyReceived: s.moneys.length ? JSON.stringify(s.moneys) : null,
+    createdAt: s.meetingDate,
+  }));
 
   // The group's real annual goals, from the meeting agenda.
   const goals: Goal[] = [
     {
       id: 1,
-      year,
+      year: DATA_END.year,
       referrals: 200,
       oneToOnes: 350,
       money: 5000000,
@@ -207,7 +255,7 @@ export function buildSeedState(now: Date = new Date()): DemoState {
 
   return {
     seedVersion: SEED_VERSION,
-    seedYear: year,
+    seedYear: DATA_END.year,
     members,
     submissions,
     goals,
