@@ -160,6 +160,14 @@ const router = {
       clearToken();
       return { success: true } as const;
     }),
+    memberLogin: mutation(async (input: { memberId: number; password: string; groupCode?: string }) => {
+      const r = await api<{ token: string; memberId: number; created: boolean }>("member-login", {
+        method: "POST",
+        body: input,
+      });
+      setToken(r.token);
+      return r;
+    }),
     login: mutation(async (input: { password: string }) => {
       const r = await api<{ token: string; role: "admin" | "member" }>("login", {
         method: "POST",
@@ -236,6 +244,9 @@ const router = {
       return api(`admin/members/${id}`, { method: "PUT", body });
     }),
     delete: mutation((input: { id: number }) => api(`admin/members/${input.id}`, { method: "DELETE" })),
+    resetPassword: mutation((input: { id: number }) =>
+      api(`admin/members/${input.id}/reset-password`, { method: "POST" })
+    ),
   },
   notes: {
     get: query(async (input: { memberId: number; meetingDate: string }) => {

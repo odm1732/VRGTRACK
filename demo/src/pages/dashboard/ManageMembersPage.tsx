@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -28,6 +28,11 @@ export default function ManageMembersPage() {
 
   const updateMutation = trpc.members.update.useMutation({
     onSuccess: () => { utils.members.listAll.invalidate(); utils.members.list.invalidate(); setEditMember(null); toast.success("Member updated."); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const resetPasswordMutation = trpc.members.resetPassword.useMutation({
+    onSuccess: () => { utils.members.listAll.invalidate(); utils.members.list.invalidate(); toast.success("Password cleared. They can create a new one with the group code."); },
     onError: (err) => toast.error(err.message),
   });
 
@@ -90,6 +95,15 @@ export default function ManageMembersPage() {
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditMember({ id: m.id, name: m.name, email: m.email ?? "", active: m.active })}>
                           <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Reset notes password"
+                          onClick={() => { if (confirm(`Reset ${m.name}'s notes password? They'll create a new one with the group code.`)) resetPasswordMutation.mutate({ id: m.id }); }}
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Remove ${m.name}?`)) deleteMutation.mutate({ id: m.id }); }}>
                           <Trash2 className="h-3.5 w-3.5" />

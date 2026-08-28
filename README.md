@@ -20,9 +20,12 @@ This repository holds the live tracker and the original application it came from
 - **Admin**: the dashboard (reports, member management, goals, export, agenda editing) is
   behind a shared admin password (`ADMIN_PASSWORD`). `POST /api/login` issues a signed
   30-day token carrying the role.
-- **Members**: the Meeting Notes page is behind a second shared password
-  (`MEMBER_PASSWORD`). Each member's notes save per person per week and persist in D1;
-  a member session cannot open the admin dashboard.
+- **Members**: each member has their own password for the Meeting Notes page. On first
+  sign-in they create it by presenting the group code (`MEMBER_PASSWORD`); after that it's
+  name + personal password. Passwords are stored as salted PBKDF2 hashes; the session
+  token carries the member's id, and the API only lets a member read or write their own
+  notes. Admins can clear a member's password from Manage Members (the member then
+  re-creates it with the group code). A member session cannot open the admin dashboard.
 - **Data**: everything lives in a D1 database. On the very first request the API creates
   its tables and, if empty, seeds the snapshot of the group's real totals through
   Aug 19, 2026 (`functions/api/seedData.json`). No migration tooling needed.
@@ -37,8 +40,8 @@ The Pages project itself is already connected to this repo. To activate the back
    Add → D1 database → variable name `DB` → select `vrgtrack`.
 3. **Set the admin password** — same Settings → Variables and Secrets → Add →
    name `ADMIN_PASSWORD`, type Secret, value = the password the leadership team will use.
-   Also add a secret named `MEMBER_PASSWORD` — the password all members share to open the
-   Meeting Notes page (must differ from the admin password).
+   Also add a secret named `MEMBER_PASSWORD` — the group code members enter once when
+   creating their personal Meeting Notes password (must differ from the admin password).
 4. **Optional — Google Sheet backup** — create a Google Sheet, add the Apps Script from
    [`docs/google-sheet-backup.md`](docs/google-sheet-backup.md), deploy it as a web app, and
    store its URL as a secret named `SHEETS_WEBHOOK_URL` on the Pages project. Every new

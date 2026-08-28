@@ -67,14 +67,16 @@ export function isAuthed(): boolean {
   return getToken() !== null;
 }
 
-export type Role = "admin" | "member";
+export type Session = { role: "admin" } | { role: "member"; memberId: number };
 
-/** Role encoded in the token (exp.role.signature), or null when signed out. */
-export function getRole(): Role | null {
+/** Session encoded in the token (exp.role.signature), or null when signed out. */
+export function getSession(): Session | null {
   const t = getToken();
   if (!t) return null;
   const role = t.split(".")[1];
-  return role === "admin" || role === "member" ? role : null;
+  if (role === "admin") return { role: "admin" };
+  if (/^m\d+$/.test(role)) return { role: "member", memberId: Number(role.slice(1)) };
+  return null;
 }
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────
@@ -118,6 +120,8 @@ export type Member = {
   name: string;
   email: string | null;
   active: boolean;
+  /** present on the public list; true once the member created their password */
+  hasPassword?: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -138,8 +142,9 @@ export type ParsedSubmission = {
   createdAt: Date;
 };
 
-type RawMember = Omit<Member, "active" | "createdAt" | "updatedAt"> & {
+type RawMember = Omit<Member, "active" | "hasPassword" | "createdAt" | "updatedAt"> & {
   active: number;
+  hasPassword?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -170,6 +175,7 @@ export function reviveMember(m: RawMember): Member {
   return {
     ...m,
     active: Boolean(m.active),
+    hasPassword: m.hasPassword === undefined ? undefined : Boolean(m.hasPassword),
     createdAt: new Date(m.createdAt),
     updatedAt: new Date(m.updatedAt),
   };

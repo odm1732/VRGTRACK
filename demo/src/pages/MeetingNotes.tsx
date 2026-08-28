@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getRole } from "@/lib/api";
+import { clearToken, getSession } from "@/lib/api";
 import { downloadNotesPdf } from "@/lib/notesPdf";
 import { trpc } from "@/lib/trpc";
 import {
@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  LogOut,
   Megaphone,
   NotebookPen,
   Users,
@@ -48,11 +49,25 @@ function formatISODate(iso: string): string {
 }
 
 function NotesGate({ onSuccess }: { onSuccess: () => void }) {
+  const { data: members } = trpc.members.list.useQuery();
+  const [memberId, setMemberId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(WHO_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [password, setPassword] = useState("");
+  const [groupCode, setGroupCode] = useState("");
+
+  const selected = members?.find((m) => String(m.id) === memberId);
+  const firstTime = selected ? selected.hasPassword === false : false;
+
   const utils = trpc.useUtils();
-  const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: () => {
+  const loginMutation = trpc.auth.memberLogin.useMutation({
+    onSuccess: (r) => {
       utils.auth.me.invalidate();
+      if (r.created) toast.success("Password created. It's yours from now on — don't lose it!");
       onSuccess();
     },
     onError: (err) => toast.error(err.message),
@@ -67,47 +82,97 @@ function NotesGate({ onSuccess }: { onSuccess: () => void }) {
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold">Meeting Notes</h1>
           <p className="text-sm text-muted-foreground">
-            Enter the member password to take notes. Your notes are saved to your name, week by
-            week.
+            Sign in with your personal password. Your notes are private and saved week by week.
           </p>
         </div>
         <form
           className="w-full space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            loginMutation.mutate({ password });
+            if (memberId === "") {
+              toast.error("Select your name first.");
+              return;
+            }
+            loginMutation.mutate({
+              memberId: Number(memberId),
+              password,
+              groupCode: firstTime ? groupCode : undefined,
+            });
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor="member-password">Member Password</Label>
+            <Label>Your name</Label>
+            <Select
+              value={memberId}
+              onValueChange={(v) => {
+                setMemberId(v);
+                try {
+                  localStorage.setItem(WHO_KEY, v);
+                } catch {
+                  /* fine */
+                }
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select your name" /></SelectTrigger>
+              <SelectContent>
+                {(members ?? []).map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="member-password">{firstTime ? "Create your password" : "Your password"}</Label>
             <Input
               id="member-password"
               type="password"
+              placeholder={firstTime ? "At least 6 characters" : "Your password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoFocus
+              minLength={firstTime ? 6 : 1}
+              autoComplete={firstTime ? "new-password" : "current-password"}
             />
           </div>
+          {firstTime && (
+            <div className="space-y-1.5">
+              <Label htmlFor="group-code">Group code</Label>
+              <Input
+                id="group-code"
+                type="password"
+                placeholder="Ask a group officer"
+                value={groupCode}
+                onChange={(e) => setGroupCode(e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                First time here? Enter the group code once to create your personal password.
+              </p>
+            </div>
+          )}
           <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
-            {loginMutation.isPending ? "Signing in…" : "Continue"}
+            {loginMutation.isPending
+              ? "Signing in…"
+              : firstTime
+                ? "Create Password & Sign In"
+                : "Sign In"}
           </Button>
         </form>
-        <p className="text-xs text-muted-foreground">Ask a group officer if you need the password.</p>
+        <p className="text-xs text-muted-foreground text-center">
+          Forgot your password? An admin can reset it from Manage Members, then sign in again
+          with the group code.
+        </p>
       </div>
     </div>
   );
 }
 
 export default function MeetingNotesPage() {
-  const [authed, setAuthed] = useState(() => getRole() !== null);
-  const [whoId, setWhoId] = useState<string>(() => {
-    try {
-      return localStorage.getItem(WHO_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
+  const [session, setSession] = useState(() => getSession());
+  const authed = session !== null;
+  // Members are locked to their own notes; admins may pick anyone.
+  const [adminWhoId, setAdminWhoId] = useState<string>("");
+  const whoId = session?.role === "member" ? String(session.memberId) : adminWhoId;
   const [weekOffset, setWeekOffset] = useState(0);
   const meetingDate = useMemo(() => tuesdayOf(new Date(), weekOffset), [weekOffset]);
 
@@ -206,31 +271,42 @@ export default function MeetingNotesPage() {
       </header>
 
       {!authed ? (
-        <NotesGate onSuccess={() => setAuthed(true)} />
+        <NotesGate onSuccess={() => setSession(getSession())} />
       ) : (
         <main className="container max-w-3xl py-6 space-y-5 pb-24">
           <Card>
             <CardContent className="flex flex-wrap items-end gap-4 pt-6">
               <div className="space-y-1.5 min-w-56 flex-1">
-                <Label>Your name</Label>
-                <Select
-                  value={whoId}
-                  onValueChange={(v) => {
-                    setWhoId(v);
-                    try {
-                      localStorage.setItem(WHO_KEY, v);
-                    } catch {
-                      /* fine */
-                    }
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select your name" /></SelectTrigger>
-                  <SelectContent>
-                    {(members ?? []).map((m) => (
-                      <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {session?.role === "member" ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Taking notes as</Label>
+                      <p className="font-semibold">{me?.name ?? "…"}</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        clearToken();
+                        setSession(null);
+                      }}
+                    >
+                      <LogOut className="h-4 w-4 mr-1.5" />Sign out
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Label>Member (admin view)</Label>
+                    <Select value={adminWhoId} onValueChange={setAdminWhoId}>
+                      <SelectTrigger><SelectValue placeholder="Select a member" /></SelectTrigger>
+                      <SelectContent>
+                        {(members ?? []).map((m) => (
+                          <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setWeekOffset((v) => v - 1)}>

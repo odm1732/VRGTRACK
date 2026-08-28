@@ -8,7 +8,7 @@
  * Required bindings on the Pages project:
  *   DB                 — D1 database binding
  *   ADMIN_PASSWORD     — environment variable/secret; the dashboard password
- *   MEMBER_PASSWORD    — optional secret; member password for Meeting Notes
+ *   MEMBER_PASSWORD    — group code required to create a member's password
  *   SHEETS_WEBHOOK_URL — optional secret; a Google Apps Script web-app URL.
  *                        When set, every new submission is appended to the
  *                        sheet, and POST /api/admin/backup-sheet pushes the
@@ -20,7 +20,7 @@ import agendaSeed from "./agendaSeed.json";
 interface Env {
   DB: D1Database;
   ADMIN_PASSWORD: string;
-  /** Optional second password giving members access to Meeting Notes. */
+  /** Group code members must present the first time they create their personal password. */
   MEMBER_PASSWORD?: string;
   SHEETS_WEBHOOK_URL?: string;
 }
@@ -92,7 +92,8 @@ async function hmacKey(secret: string) {
   );
 }
 
-type Role = "admin" | "member";
+/** "admin", or "m<memberId>" for an individual member session. */
+type Role = string;
 
 async function issueToken(secret: string, role: Role): Promise<string> {
   const exp = Date.now() + TOKEN_TTL_MS;
@@ -111,7 +112,7 @@ async function verifyToken(token: string | null, secret: string): Promise<Role |
   const [expStr, role, sigHex] = parts;
   const exp = Number(expStr);
   if (!Number.isFinite(exp) || exp < Date.now()) return null;
-  if (role !== "admin" && role !== "member") return null;
+  if (role !== "admin" && !/^m\d+$/.test(role)) return null;
   if (sigHex.length !== 64 || /[^0-9a-f]/.test(sigHex)) return null;
   const sig = new Uint8Array(sigHex.match(/../g)!.map((h) => parseInt(h, 16)));
   const key = await hmacKey(secret);
@@ -121,7 +122,54 @@ async function verifyToken(token: string | null, secret: string): Promise<Role |
     sig,
     new TextEncoder().encode(`${exp}.${role}`)
   );
-  return valid ? (role as Role) : null;
+  return valid ? role : null;
+}
+
+function memberIdOf(role: Role | null): number | null {
+  if (!role || role === "admin") return null;
+  return Number(role.slice(1));
+}
+
+// ─── Password hashing (PBKDF2-SHA256 via WebCrypto) ──────────────────────────
+
+const PBKDF2_ITERATIONS = 50_000;
+
+function toHex(buf: ArrayBuffer | Uint8Array): string {
+  return [...new Uint8Array(buf as ArrayBuffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function pbkdf2(password: string, saltHex: string, iterations: number): Promise<string> {
+  const salt = new Uint8Array(saltHex.match(/../g)!.map((h) => parseInt(h, 16)));
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    keyMaterial,
+    256
+  );
+  return toHex(bits);
+}
+
+async function hashPassword(password: string): Promise<string> {
+  const saltHex = toHex(crypto.getRandomValues(new Uint8Array(16)));
+  const hashHex = await pbkdf2(password, saltHex, PBKDF2_ITERATIONS);
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${saltHex}$${hashHex}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [scheme, iterStr, saltHex, hashHex] = stored.split("$");
+  if (scheme !== "pbkdf2") return false;
+  const computed = await pbkdf2(password, saltHex, Number(iterStr));
+  // constant-time-ish comparison
+  if (computed.length !== hashHex.length) return false;
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ hashHex.charCodeAt(i);
+  return diff === 0;
 }
 
 function bearer(request: Request): string | null {
@@ -191,6 +239,9 @@ async function ensureReady(env: Env) {
     )
       .bind(JSON.stringify(agendaSeed), new Date().toISOString())
       .run();
+
+    // Older databases predate per-member passwords; add the column in place.
+    await env.DB.prepare("ALTER TABLE members ADD COLUMN passwordHash TEXT").run().catch(() => {});
 
     const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM members").first<{ c: number }>();
     if ((row?.c ?? 0) > 0) return;
@@ -325,16 +376,61 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
       if (typeof body.password !== "string" || body.password.length === 0) {
         return err("Incorrect password.", 401);
       }
-      let role: Role | null = null;
-      if (body.password === env.ADMIN_PASSWORD) role = "admin";
-      else if (env.MEMBER_PASSWORD && body.password === env.MEMBER_PASSWORD) role = "member";
-      if (!role) return err("Incorrect password.", 401);
-      return ok({ token: await issueToken(env.ADMIN_PASSWORD, role), role });
+      if (body.password !== env.ADMIN_PASSWORD) return err("Incorrect password.", 401);
+      return ok({ token: await issueToken(env.ADMIN_PASSWORD, "admin"), role: "admin" });
+    }
+
+    if (path === "member-login" && method === "POST") {
+      const b = (await request.json().catch(() => ({}))) as {
+        memberId?: number;
+        password?: string;
+        groupCode?: string;
+      };
+      if (typeof b.memberId !== "number" || typeof b.password !== "string" || b.password.length === 0) {
+        return err("Select your name and enter a password.");
+      }
+      const member = await env.DB.prepare(
+        "SELECT id, name, active, passwordHash FROM members WHERE id = ?"
+      )
+        .bind(b.memberId)
+        .first<{ id: number; name: string; active: number; passwordHash: string | null }>();
+      if (!member || !member.active) return err("Unknown member.", 404);
+
+      if (!member.passwordHash) {
+        // First sign-in: creating a password requires the group code so only
+        // people the group has let in can claim a name.
+        if (!env.MEMBER_PASSWORD) {
+          return err("Member sign-up is not configured. Ask an admin to set the group code.", 500);
+        }
+        if (b.groupCode !== env.MEMBER_PASSWORD) {
+          return err("Incorrect group code. Ask a group officer for it.", 401);
+        }
+        if (b.password.length < 6) return err("Password must be at least 6 characters.");
+        await env.DB.prepare("UPDATE members SET passwordHash = ?, updatedAt = ? WHERE id = ?")
+          .bind(await hashPassword(b.password), new Date().toISOString(), member.id)
+          .run();
+        return ok({
+          token: await issueToken(env.ADMIN_PASSWORD, `m${member.id}`),
+          memberId: member.id,
+          created: true,
+        });
+      }
+
+      if (!(await verifyPassword(b.password, member.passwordHash))) {
+        return err("Incorrect password.", 401);
+      }
+      return ok({
+        token: await issueToken(env.ADMIN_PASSWORD, `m${member.id}`),
+        memberId: member.id,
+        created: false,
+      });
     }
 
     if (path === "members" && method === "GET") {
       const r = await env.DB.prepare(
-        "SELECT id, name, email, active, createdAt, updatedAt FROM members WHERE active = 1 ORDER BY name"
+        `SELECT id, name, email, active, createdAt, updatedAt,
+                (passwordHash IS NOT NULL) AS hasPassword
+         FROM members WHERE active = 1 ORDER BY name`
       ).all();
       return ok(r.results);
     }
@@ -427,11 +523,17 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     if (path === "notes" && (method === "GET" || method === "PUT")) {
       const role = await verifyToken(bearer(request), env.ADMIN_PASSWORD);
       if (!role) return err("Unauthorized.", 401);
+      const ownMemberId = memberIdOf(role);
 
       if (method === "GET") {
-        const memberId = Number(url.searchParams.get("memberId"));
+        const requested = Number(url.searchParams.get("memberId"));
+        // A member session only ever reads its own notes; admins may read any.
+        const memberId = ownMemberId ?? requested;
         const meetingDate = url.searchParams.get("meetingDate");
         if (!memberId || !meetingDate) return err("memberId and meetingDate are required.");
+        if (ownMemberId && requested && requested !== ownMemberId) {
+          return err("You can only view your own notes.", 403);
+        }
         const row = await env.DB.prepare(
           "SELECT * FROM notes WHERE memberId = ? AND meetingDate = ?"
         )
@@ -449,6 +551,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
       } | null;
       if (!b || typeof b.memberId !== "number" || typeof b.meetingDate !== "string") {
         return err("memberId and meetingDate are required.");
+      }
+      if (ownMemberId && b.memberId !== ownMemberId) {
+        return err("You can only save your own notes.", 403);
       }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(b.meetingDate)) return err("Invalid meeting date.");
       const presentation = String(b.presentationNotes ?? "");
@@ -489,6 +594,14 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           "INSERT INTO members (name, email, active, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)"
         )
           .bind(b.name.trim(), b.email || null, now, now)
+          .run();
+        return ok({ success: true });
+      }
+
+      const resetMatch = /^members\/(\d+)\/reset-password$/.exec(sub);
+      if (resetMatch && method === "POST") {
+        await env.DB.prepare("UPDATE members SET passwordHash = NULL, updatedAt = ? WHERE id = ?")
+          .bind(new Date().toISOString(), Number(resetMatch[1]))
           .run();
         return ok({ success: true });
       }
