@@ -14,6 +14,7 @@
  *                        full history.
  */
 import seedData from "./seedData.json";
+import agendaSeed from "./agendaSeed.json";
 
 interface Env {
   DB: D1Database;
@@ -151,9 +152,20 @@ async function ensureReady(env: Env) {
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )`),
       env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_submissions_date ON submissions (meetingDate)`),
       env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_submissions_member ON submissions (memberId)`),
     ]);
+
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value, updatedAt) VALUES ('agenda', ?, ?) ON CONFLICT(key) DO NOTHING"
+    )
+      .bind(JSON.stringify(agendaSeed), new Date().toISOString())
+      .run();
 
     const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM members").first<{ c: number }>();
     if ((row?.c ?? 0) > 0) return;
@@ -296,6 +308,11 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
         "SELECT id, name, email, active, createdAt, updatedAt FROM members WHERE active = 1 ORDER BY name"
       ).all();
       return ok(r.results);
+    }
+
+    if (path === "agenda" && method === "GET") {
+      const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'agenda'").first<{ value: string }>();
+      return ok(row ? JSON.parse(row.value) : agendaSeed);
     }
 
     if (path === "summary" && method === "GET") {
@@ -452,6 +469,28 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           .bind(memberId)
           .all<SubmissionRow>();
         return ok({ member, submissions: subs.results, members: await allMembers(env) });
+      }
+
+      if (sub === "agenda" && method === "PUT") {
+        const body = await request.text();
+        if (body.length > 100_000) return err("Agenda content is too large.");
+        let doc: Record<string, unknown>;
+        try {
+          doc = JSON.parse(body);
+        } catch {
+          return err("Invalid agenda payload.");
+        }
+        for (const key of ["agendaItems", "officers", "speakers", "educational", "events"]) {
+          if (!Array.isArray(doc[key])) return err(`Agenda field '${key}' must be a list.`);
+        }
+        if (typeof doc.meetingInfo !== "string") return err("meetingInfo must be text.");
+        await env.DB.prepare(
+          `INSERT INTO settings (key, value, updatedAt) VALUES ('agenda', ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`
+        )
+          .bind(JSON.stringify(doc), new Date().toISOString())
+          .run();
+        return ok({ success: true });
       }
 
       if (sub === "backup-sheet" && method === "POST") {

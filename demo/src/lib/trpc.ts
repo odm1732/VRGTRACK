@@ -11,6 +11,7 @@ import {
   useDataVersion,
   type Member,
   type ParsedSubmission,
+  type AgendaDoc,
   type RawTypes,
 } from "@/lib/api";
 
@@ -221,6 +222,10 @@ const router = {
       return api(`admin/members/${id}`, { method: "PUT", body });
     }),
     delete: mutation((input: { id: number }) => api(`admin/members/${input.id}`, { method: "DELETE" })),
+  },
+  agenda: {
+    get: query(() => api<AgendaDoc>("agenda")),
+    set: mutation((doc: AgendaDoc) => api("admin/agenda", { method: "PUT", body: doc })),
   },
   backup: {
     toSheet: mutation(() => api<{ rows: number }>("admin/backup-sheet", { method: "POST" })),

@@ -181,3 +181,15 @@ export function reviveSubmission(s: RawSubmission): ParsedSubmission {
 }
 
 export type RawTypes = { member: RawMember; submission: RawSubmission };
+
+// ─── Meeting agenda ──────────────────────────────────────────────────────────
+
+export type AgendaDoc = {
+  meetingInfo: string;
+  agendaItems: { time: string; item: string }[];
+  officers: { role: string; name: string }[];
+  /** date is ISO yyyy-mm-dd; past dates rotate off the public page automatically */
+  speakers: { date: string; name: string }[];
+  educational: { label: string; name: string }[];
+  events: { date: string; time: string; name: string; location: string }[];
+};

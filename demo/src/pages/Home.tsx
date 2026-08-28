@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { BarChart3, DollarSign, Target, Users } from "lucide-react";
+import { BarChart3, CalendarDays, DollarSign, Target, Users } from "lucide-react";
 import { Link } from "wouter";
 
 function StatCard({
@@ -90,6 +90,13 @@ export default function Home() {
               <Link href="/dashboard">View Dashboard</Link>
             </Button>
           </div>
+          <Link
+            href="/agenda"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
+            <CalendarDays className="h-4 w-4" />
+            Meeting agenda & speaker schedule
+          </Link>
         </div>
       </section>
 

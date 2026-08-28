@@ -26,6 +26,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
+  CalendarDays,
   Calendar,
   Download,
   Eye,
@@ -49,6 +50,7 @@ const menuItems = [
   { icon: Settings, label: "Manage Members", path: "/dashboard/manage-members" },
   { icon: Download, label: "Export Data", path: "/dashboard/export" },
   { icon: Target, label: "Annual Goals", path: "/dashboard/goals" },
+  { icon: CalendarDays, label: "Meeting Agenda", path: "/dashboard/agenda" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

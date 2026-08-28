@@ -5,6 +5,7 @@ import { Route, Router, Switch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import AgendaPage from "./pages/Agenda";
 import Home from "./pages/Home";
 import SubmitForm from "./pages/SubmitForm";
 import DashboardLayout from "./components/DashboardLayout";
@@ -13,6 +14,7 @@ import WeeklyReportPage from "./pages/dashboard/WeeklyReportPage";
 import MemberReportsPage from "./pages/dashboard/MemberReportsPage";
 import MemberDetailPage from "./pages/dashboard/MemberDetailPage";
 import AbsenceTrackingPage from "./pages/dashboard/AbsenceTrackingPage";
+import AgendaEditorPage from "./pages/dashboard/AgendaEditorPage";
 import ManageMembersPage from "./pages/dashboard/ManageMembersPage";
 import ExportDataPage from "./pages/dashboard/ExportDataPage";
 import GoalsPage from "./pages/dashboard/GoalsPage";
@@ -26,6 +28,7 @@ function Routes() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/submit" component={SubmitForm} />
+      <Route path="/agenda" component={AgendaPage} />
       <Route path="/dashboard">
         <DashboardRoute><DashboardPage /></DashboardRoute>
       </Route>
@@ -51,6 +54,9 @@ function Routes() {
       </Route>
       <Route path="/dashboard/goals">
         <DashboardRoute><GoalsPage /></DashboardRoute>
+      </Route>
+      <Route path="/dashboard/agenda">
+        <DashboardRoute><AgendaEditorPage /></DashboardRoute>
       </Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

@@ -1,0 +1,55 @@
+{
+  "meetingInfo": "Tuesdays 8:00–9:30 AM · Staunton Augusta Family YMCA, Staunton",
+  "agendaItems": [
+    { "time": "8:00", "item": "Open networking & coffee" },
+    { "time": "8:10", "item": "Welcome, intro of leadership team & guests, cell phone reminder" },
+    { "time": "8:12", "item": "Educational training" },
+    { "time": "8:15", "item": "Officer reports" },
+    { "time": "8:20", "item": "Accountability / reporting — submit your weekly report on this site" },
+    { "time": "8:23", "item": "60-second commercials, testimonials, tips, referrals & announcements" },
+    { "time": "9:00", "item": "10-minute presentation" },
+    { "time": "9:10", "item": "5-minute Q&A" },
+    { "time": "9:15", "item": "Meeting adjourns" }
+  ],
+  "officers": [
+    { "role": "President", "name": "Darren Crosier" },
+    { "role": "Vice President", "name": "Teresa Whitesell" },
+    { "role": "Secretary", "name": "Michelle Fix" },
+    { "role": "Treasurer", "name": "Dylan Clark" },
+    { "role": "Onboarding Liaison", "name": "Chris McVey" },
+    { "role": "Membership Committee", "name": "Jeff Williams, Chris McVey, Sarah Fowler, Sandy Zamalis" },
+    { "role": "Educational Coordinators", "name": "Anne King, David Heller, Jordan Taylor" },
+    { "role": "Events Coordinators", "name": "Darren Crosier, Jeff Williams" }
+  ],
+  "speakers": [
+    { "date": "2026-08-18", "name": "Chris McVey" },
+    { "date": "2026-08-25", "name": "Jonathan Tinnin" },
+    { "date": "2026-09-01", "name": "Scott Danielson" },
+    { "date": "2026-09-08", "name": "Darren Crosier" },
+    { "date": "2026-09-15", "name": "Jordan Taylor" },
+    { "date": "2026-09-22", "name": "Sean Baber" },
+    { "date": "2026-09-29", "name": "Josh Cole" },
+    { "date": "2026-10-06", "name": "Shelton Mason" },
+    { "date": "2026-10-13", "name": "Daley Goff" },
+    { "date": "2026-10-20", "name": "Sarah Fowler" },
+    { "date": "2026-10-27", "name": "Sandy Zamalis" },
+    { "date": "2026-11-03", "name": "Michelle Fix" },
+    { "date": "2026-11-10", "name": "Jeff Williams" },
+    { "date": "2026-11-17", "name": "Arturo & Mariela Suarez" },
+    { "date": "2026-11-24", "name": "Pat Kincheloe" },
+    { "date": "2026-12-01", "name": "Alan Stamp" },
+    { "date": "2026-12-08", "name": "David Heller" }
+  ],
+  "educational": [
+    { "label": "August", "name": "Pat Kincheloe" },
+    { "label": "September", "name": "Chris McVey" }
+  ],
+  "events": [
+    { "date": "2026-08-13", "time": "4:00 PM", "name": "Brighter Ribbon Cutting", "location": "1790 E Market St, Suite 30" },
+    { "date": "2026-08-19", "time": "5:00–6:30 PM", "name": "Business After Hours", "location": "Oak Lawn Mausoleum" },
+    { "date": "2026-08-21", "time": "8:30–9:30 AM", "name": "Coffee & Connections", "location": "Bookkeeper.com, Waynesboro" },
+    { "date": "2026-09-01", "time": "12:00–1:00 PM", "name": "Ducks in a Row M&G", "location": "Dovetail Design & Cabinetry" },
+    { "date": "2026-09-03", "time": "5:00–6:30 PM", "name": "Ribbon Cutting", "location": "Edward Jones, Staunton" },
+    { "date": "2026-09-18", "time": "8:30–9:30 AM", "name": "Coffee & Connections", "location": "Calveria Living at Fishersville" }
+  ]
+}
