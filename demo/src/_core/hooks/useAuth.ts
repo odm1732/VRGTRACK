@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { clearToken, isAuthed, useDataVersion } from "@/lib/api";
+import { clearToken, getRole, useDataVersion } from "@/lib/api";
 
 const ADMIN_USER = { id: 1, name: "VRG Admin", email: null as string | null, role: "admin" as const };
 
@@ -10,7 +10,8 @@ const ADMIN_USER = { id: 1, name: "VRG Admin", email: null as string | null, rol
 export function useAuth() {
   useDataVersion(); // re-render on sign-in/sign-out
 
-  const authed = isAuthed();
+  // The dashboard is admin-only; a member-password session doesn't open it.
+  const authed = getRole() === "admin";
 
   const logout = useCallback(async () => {
     clearToken();

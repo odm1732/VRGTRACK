@@ -12,6 +12,8 @@ import {
   type Member,
   type ParsedSubmission,
   type AgendaDoc,
+  type NoteDoc,
+  type RawNoteRow,
   type RawTypes,
 } from "@/lib/api";
 
@@ -38,26 +40,35 @@ function query<TInput, TOutput>(resolve: (input: TInput) => Promise<TOutput>) {
       const enabled = options?.enabled !== false;
       const version = useDataVersion();
       const key = JSON.stringify(input ?? null);
-      const [state, setState] = useState<{ data: TOutput | undefined; isLoading: boolean }>({
+      const [state, setState] = useState<{ key: string; data: TOutput | undefined; isLoading: boolean }>({
+        key,
         data: undefined,
         isLoading: enabled,
       });
       const inputRef = useRef(input);
       inputRef.current = input;
 
+      // Render-time reset: the moment the input key changes, the previous
+      // data is discarded in the SAME render, so no consumer ever observes
+      // rows that belong to a different input (e.g. last week's notes while
+      // this week's are still loading).
+      if (state.key !== key) {
+        setState({ key, data: undefined, isLoading: enabled });
+      }
+
       useEffect(() => {
         if (!enabled) {
-          setState({ data: undefined, isLoading: false });
+          setState({ key, data: undefined, isLoading: false });
           return;
         }
         let cancelled = false;
-        setState((prev) => ({ data: prev.data, isLoading: prev.data === undefined }));
+        setState((prev) => ({ key, data: prev.key === key ? prev.data : undefined, isLoading: prev.key !== key || prev.data === undefined }));
         resolve(inputRef.current as TInput)
           .then((data) => {
-            if (!cancelled) setState({ data, isLoading: false });
+            if (!cancelled) setState({ key, data, isLoading: false });
           })
           .catch(() => {
-            if (!cancelled) setState((prev) => ({ data: prev.data, isLoading: false }));
+            if (!cancelled) setState((prev) => ({ ...prev, isLoading: false }));
           });
         return () => {
           cancelled = true;
@@ -66,11 +77,11 @@ function query<TInput, TOutput>(resolve: (input: TInput) => Promise<TOutput>) {
 
       const refetch = useCallback(async () => {
         const data = await resolve(inputRef.current as TInput);
-        setState({ data, isLoading: false });
+        setState({ key: JSON.stringify(inputRef.current ?? null), data, isLoading: false });
         return { data };
       }, []);
 
-      return { ...state, error: null, refetch };
+      return { data: state.data, isLoading: state.isLoading, error: null, refetch };
     },
     invalidate: async () => bump(),
     setData: () => bump(),
@@ -150,9 +161,12 @@ const router = {
       return { success: true } as const;
     }),
     login: mutation(async (input: { password: string }) => {
-      const r = await api<{ token: string }>("login", { method: "POST", body: { password: input.password } });
+      const r = await api<{ token: string; role: "admin" | "member" }>("login", {
+        method: "POST",
+        body: { password: input.password },
+      });
       setToken(r.token);
-      return { success: true } as const;
+      return { success: true, role: r.role } as const;
     }),
   },
   dashboard: {
@@ -222,6 +236,28 @@ const router = {
       return api(`admin/members/${id}`, { method: "PUT", body });
     }),
     delete: mutation((input: { id: number }) => api(`admin/members/${input.id}`, { method: "DELETE" })),
+  },
+  notes: {
+    get: query(async (input: { memberId: number; meetingDate: string }) => {
+      const row = await api<RawNoteRow | null>(
+        `notes?memberId=${input.memberId}&meetingDate=${encodeURIComponent(input.meetingDate)}`
+      );
+      if (!row) return null;
+      let memberNotes: Record<string, string> = {};
+      try {
+        memberNotes = JSON.parse(row.memberNotes);
+      } catch {
+        /* corrupt cell — start fresh */
+      }
+      return {
+        memberId: row.memberId,
+        meetingDate: row.meetingDate,
+        presentationNotes: row.presentationNotes,
+        educationalNotes: row.educationalNotes,
+        memberNotes,
+      } satisfies NoteDoc;
+    }),
+    save: mutation((doc: NoteDoc) => api("notes", { method: "PUT", body: doc })),
   },
   agenda: {
     get: query(() => api<AgendaDoc>("agenda")),

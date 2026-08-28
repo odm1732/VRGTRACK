@@ -8,6 +8,7 @@
  * Required bindings on the Pages project:
  *   DB                 — D1 database binding
  *   ADMIN_PASSWORD     — environment variable/secret; the dashboard password
+ *   MEMBER_PASSWORD    — optional secret; member password for Meeting Notes
  *   SHEETS_WEBHOOK_URL — optional secret; a Google Apps Script web-app URL.
  *                        When set, every new submission is appended to the
  *                        sheet, and POST /api/admin/backup-sheet pushes the
@@ -19,6 +20,8 @@ import agendaSeed from "./agendaSeed.json";
 interface Env {
   DB: D1Database;
   ADMIN_PASSWORD: string;
+  /** Optional second password giving members access to Meeting Notes. */
+  MEMBER_PASSWORD?: string;
   SHEETS_WEBHOOK_URL?: string;
 }
 
@@ -89,25 +92,36 @@ async function hmacKey(secret: string) {
   );
 }
 
-async function issueToken(secret: string): Promise<string> {
+type Role = "admin" | "member";
+
+async function issueToken(secret: string, role: Role): Promise<string> {
   const exp = Date.now() + TOKEN_TTL_MS;
   const key = await hmacKey(secret);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(exp)));
+  const payload = `${exp}.${role}`;
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `${exp}.${hex}`;
+  return `${payload}.${hex}`;
 }
 
-async function verifyToken(token: string | null, secret: string): Promise<boolean> {
-  if (!token) return false;
-  const dot = token.indexOf(".");
-  if (dot < 1) return false;
-  const exp = Number(token.slice(0, dot));
-  if (!Number.isFinite(exp) || exp < Date.now()) return false;
-  const sigHex = token.slice(dot + 1);
-  if (sigHex.length !== 64 || /[^0-9a-f]/.test(sigHex)) return false;
+/** Returns the token's role, or null when missing/invalid/expired. */
+async function verifyToken(token: string | null, secret: string): Promise<Role | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [expStr, role, sigHex] = parts;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp < Date.now()) return null;
+  if (role !== "admin" && role !== "member") return null;
+  if (sigHex.length !== 64 || /[^0-9a-f]/.test(sigHex)) return null;
   const sig = new Uint8Array(sigHex.match(/../g)!.map((h) => parseInt(h, 16)));
   const key = await hmacKey(secret);
-  return crypto.subtle.verify("HMAC", key, sig, new TextEncoder().encode(String(exp)));
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    sig,
+    new TextEncoder().encode(`${exp}.${role}`)
+  );
+  return valid ? (role as Role) : null;
 }
 
 function bearer(request: Request): string | null {
@@ -156,6 +170,17 @@ async function ensureReady(env: Env) {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updatedAt TEXT NOT NULL
+      )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memberId INTEGER NOT NULL,
+        meetingDate TEXT NOT NULL,
+        presentationNotes TEXT NOT NULL DEFAULT '',
+        educationalNotes TEXT NOT NULL DEFAULT '',
+        memberNotes TEXT NOT NULL DEFAULT '{}',
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        UNIQUE(memberId, meetingDate)
       )`),
       env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_submissions_date ON submissions (meetingDate)`),
       env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_submissions_member ON submissions (memberId)`),
@@ -297,10 +322,14 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     // ── Public ────────────────────────────────────────────────────────────
     if (path === "login" && method === "POST") {
       const body = (await request.json().catch(() => ({}))) as { password?: string };
-      if (typeof body.password !== "string" || body.password !== env.ADMIN_PASSWORD) {
+      if (typeof body.password !== "string" || body.password.length === 0) {
         return err("Incorrect password.", 401);
       }
-      return ok({ token: await issueToken(env.ADMIN_PASSWORD) });
+      let role: Role | null = null;
+      if (body.password === env.ADMIN_PASSWORD) role = "admin";
+      else if (env.MEMBER_PASSWORD && body.password === env.MEMBER_PASSWORD) role = "member";
+      if (!role) return err("Incorrect password.", 401);
+      return ok({ token: await issueToken(env.ADMIN_PASSWORD, role), role });
     }
 
     if (path === "members" && method === "GET") {
@@ -394,9 +423,58 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
       return ok({ success: true });
     }
 
+    // ── Notes (member or admin token) ─────────────────────────────────────
+    if (path === "notes" && (method === "GET" || method === "PUT")) {
+      const role = await verifyToken(bearer(request), env.ADMIN_PASSWORD);
+      if (!role) return err("Unauthorized.", 401);
+
+      if (method === "GET") {
+        const memberId = Number(url.searchParams.get("memberId"));
+        const meetingDate = url.searchParams.get("meetingDate");
+        if (!memberId || !meetingDate) return err("memberId and meetingDate are required.");
+        const row = await env.DB.prepare(
+          "SELECT * FROM notes WHERE memberId = ? AND meetingDate = ?"
+        )
+          .bind(memberId, meetingDate)
+          .first();
+        return ok(row ?? null);
+      }
+
+      const b = (await request.json().catch(() => null)) as {
+        memberId?: number;
+        meetingDate?: string;
+        presentationNotes?: string;
+        educationalNotes?: string;
+        memberNotes?: Record<string, string>;
+      } | null;
+      if (!b || typeof b.memberId !== "number" || typeof b.meetingDate !== "string") {
+        return err("memberId and meetingDate are required.");
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(b.meetingDate)) return err("Invalid meeting date.");
+      const presentation = String(b.presentationNotes ?? "");
+      const educational = String(b.educationalNotes ?? "");
+      const memberNotes = JSON.stringify(b.memberNotes ?? {});
+      if (presentation.length + educational.length + memberNotes.length > 200_000) {
+        return err("Notes are too large.");
+      }
+      const now = new Date().toISOString();
+      await env.DB.prepare(
+        `INSERT INTO notes (memberId, meetingDate, presentationNotes, educationalNotes, memberNotes, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(memberId, meetingDate) DO UPDATE SET
+           presentationNotes = excluded.presentationNotes,
+           educationalNotes = excluded.educationalNotes,
+           memberNotes = excluded.memberNotes,
+           updatedAt = excluded.updatedAt`
+      )
+        .bind(b.memberId, b.meetingDate, presentation, educational, memberNotes, now, now)
+        .run();
+      return ok({ success: true });
+    }
+
     // ── Admin (Bearer token) ──────────────────────────────────────────────
     if (path.startsWith("admin/")) {
-      if (!(await verifyToken(bearer(request), env.ADMIN_PASSWORD))) {
+      if ((await verifyToken(bearer(request), env.ADMIN_PASSWORD)) !== "admin") {
         return err("Unauthorized.", 401);
       }
       const sub = path.slice("admin/".length);

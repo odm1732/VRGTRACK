@@ -6,6 +6,7 @@ import { useHashLocation } from "wouter/use-hash-location";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import AgendaPage from "./pages/Agenda";
+import MeetingNotesPage from "./pages/MeetingNotes";
 import Home from "./pages/Home";
 import SubmitForm from "./pages/SubmitForm";
 import DashboardLayout from "./components/DashboardLayout";
@@ -29,6 +30,7 @@ function Routes() {
       <Route path="/" component={Home} />
       <Route path="/submit" component={SubmitForm} />
       <Route path="/agenda" component={AgendaPage} />
+      <Route path="/notes" component={MeetingNotesPage} />
       <Route path="/dashboard">
         <DashboardRoute><DashboardPage /></DashboardRoute>
       </Route>

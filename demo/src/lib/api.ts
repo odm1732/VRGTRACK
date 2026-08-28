@@ -67,6 +67,16 @@ export function isAuthed(): boolean {
   return getToken() !== null;
 }
 
+export type Role = "admin" | "member";
+
+/** Role encoded in the token (exp.role.signature), or null when signed out. */
+export function getRole(): Role | null {
+  const t = getToken();
+  if (!t) return null;
+  const role = t.split(".")[1];
+  return role === "admin" || role === "member" ? role : null;
+}
+
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
 export async function api<T>(
@@ -192,4 +202,26 @@ export type AgendaDoc = {
   speakers: { date: string; name: string }[];
   educational: { label: string; name: string }[];
   events: { date: string; time: string; name: string; location: string }[];
+};
+
+// ─── Meeting notes ───────────────────────────────────────────────────────────
+
+export type NoteDoc = {
+  memberId: number;
+  meetingDate: string;
+  presentationNotes: string;
+  educationalNotes: string;
+  /** keyed by the member the note is about (id as string) */
+  memberNotes: Record<string, string>;
+};
+
+export type RawNoteRow = {
+  id: number;
+  memberId: number;
+  meetingDate: string;
+  presentationNotes: string;
+  educationalNotes: string;
+  memberNotes: string;
+  createdAt: string;
+  updatedAt: string;
 };
