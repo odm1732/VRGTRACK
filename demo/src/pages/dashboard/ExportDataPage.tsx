@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
-import { Download } from "lucide-react";
+import { Download, Sheet } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -61,6 +61,11 @@ export default function ExportDataPage() {
     toast.success("Submissions exported.");
   };
 
+  const backupMutation = trpc.backup.toSheet.useMutation({
+    onSuccess: (r) => toast.success(`Backed up ${r.rows.toLocaleString()} submissions to the Google Sheet.`),
+    onError: (err) => toast.error(err.message),
+  });
+
   const handleExportMembers = async () => {
     const result = await refetchMembers();
     if (!result.data) { toast.error("No data to export."); return; }
@@ -100,6 +105,21 @@ export default function ExportDataPage() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Google Sheet Backup</CardTitle>
+            <CardDescription>
+              New submissions are appended to the connected Google Sheet automatically. Use this to
+              push the complete history — for a first-time backup, or to refresh the sheet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => backupMutation.mutate(undefined)} disabled={backupMutation.isPending} variant="secondary" className="w-full">
+              <Sheet className="h-4 w-4 mr-2" />
+              {backupMutation.isPending ? "Backing up…" : "Send Full Backup to Google Sheet"}
+            </Button>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Submissions</CardTitle>

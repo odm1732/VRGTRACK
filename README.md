@@ -34,7 +34,12 @@ The Pages project itself is already connected to this repo. To activate the back
    Add → D1 database → variable name `DB` → select `vrgtrack`.
 3. **Set the admin password** — same Settings → Variables and Secrets → Add →
    name `ADMIN_PASSWORD`, type Secret, value = the password the leadership team will use.
-4. **Redeploy** — Deployments → latest → Retry deployment (bindings only apply to new
+4. **Optional — Google Sheet backup** — create a Google Sheet, add the Apps Script from
+   [`docs/google-sheet-backup.md`](docs/google-sheet-backup.md), deploy it as a web app, and
+   store its URL as a secret named `SHEETS_WEBHOOK_URL` on the Pages project. Every new
+   submission is then appended to the sheet, and the dashboard's Export Data page gains a
+   "Send Full Backup" button.
+5. **Redeploy** — Deployments → latest → Retry deployment (bindings only apply to new
    deployments).
 
 Visit the site: the first request seeds the database, and the dashboard accepts the

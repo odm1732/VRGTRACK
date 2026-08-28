@@ -222,6 +222,9 @@ const router = {
     }),
     delete: mutation((input: { id: number }) => api(`admin/members/${input.id}`, { method: "DELETE" })),
   },
+  backup: {
+    toSheet: mutation(() => api<{ rows: number }>("admin/backup-sheet", { method: "POST" })),
+  },
   submissions: {
     create: mutation(
       (input: {

@@ -6,14 +6,19 @@
  * database is empty, so no migration tooling is needed.
  *
  * Required bindings on the Pages project:
- *   DB              — D1 database binding
- *   ADMIN_PASSWORD  — environment variable/secret; the dashboard password
+ *   DB                 — D1 database binding
+ *   ADMIN_PASSWORD     — environment variable/secret; the dashboard password
+ *   SHEETS_WEBHOOK_URL — optional secret; a Google Apps Script web-app URL.
+ *                        When set, every new submission is appended to the
+ *                        sheet, and POST /api/admin/backup-sheet pushes the
+ *                        full history.
  */
 import seedData from "./seedData.json";
 
 interface Env {
   DB: D1Database;
   ADMIN_PASSWORD: string;
+  SHEETS_WEBHOOK_URL?: string;
 }
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
@@ -222,6 +227,45 @@ async function goalsForYear(env: Env, year: number) {
   return env.DB.prepare("SELECT * FROM goals WHERE year = ?").bind(year).first();
 }
 
+// ─── Google Sheet backup ──────────────────────────────────────────────────────
+
+/** One readable spreadsheet row per submission; ids resolved to names. */
+function sheetRow(s: SubmissionRow, names: Map<number, string>): (string | number)[] {
+  const nameOf = (id: number) => names.get(id) ?? `#${id}`;
+  const refs = parseJsonSafe<{ toMemberId: number; count: number }[]>(s.referrals, []);
+  const otos = parseJsonSafe<number[]>(s.oneToOnes, []);
+  const money = parseJsonSafe<{ fromMemberId: number; amount: number }[]>(s.moneyReceived, []);
+  return [
+    s.createdAt,
+    s.meetingDate.slice(0, 10),
+    nameOf(s.memberId),
+    s.attended ? "Yes" : "No",
+    s.absenceReason ?? "",
+    s.visitorsCount,
+    refs.reduce((a, r) => a + (Number(r.count) || 0), 0),
+    refs.map((r) => (r.count > 1 ? `${nameOf(r.toMemberId)} ×${r.count}` : nameOf(r.toMemberId))).join("; "),
+    otos.length,
+    otos.map(nameOf).join("; "),
+    money.reduce((a, m) => a + (Number(m.amount) || 0), 0),
+    money.map((m) => `${nameOf(m.fromMemberId)}: $${m.amount}`).join("; "),
+  ];
+}
+
+async function memberNames(env: Env): Promise<Map<number, string>> {
+  const r = await env.DB.prepare("SELECT id, name FROM members").all<{ id: number; name: string }>();
+  return new Map(r.results.map((m) => [m.id, m.name]));
+}
+
+/** Best-effort append to the Google Sheet; backup failures never block a submission. */
+async function pushToSheet(url: string, rows: (string | number)[][]): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rows }),
+    redirect: "follow", // Apps Script web apps respond via redirect
+  });
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const onRequest: PagesFunction<Env> = async (ctx) => {
@@ -299,7 +343,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
         .map((m) => ({ fromMemberId: Number(m.fromMemberId), amount: Number(m.amount) || 0 }))
         .filter((m) => m.fromMemberId && m.amount > 0);
 
-      await env.DB.prepare(
+      const inserted = await env.DB.prepare(
         `INSERT INTO submissions
           (memberId, meetingDate, attended, absenceReason, visitorsCount, referrals, oneToOnes, moneyReceived, createdAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -316,6 +360,20 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           new Date().toISOString()
         )
         .run();
+
+      if (env.SHEETS_WEBHOOK_URL) {
+        const webhook = env.SHEETS_WEBHOOK_URL;
+        ctx.waitUntil(
+          (async () => {
+            const last = await env.DB.prepare("SELECT * FROM submissions WHERE id = ?")
+              .bind(inserted.meta.last_row_id)
+              .first<SubmissionRow>();
+            if (last) await pushToSheet(webhook, [sheetRow(last, await memberNames(env))]);
+          })().catch(() => {
+            /* backup is best-effort */
+          })
+        );
+      }
       return ok({ success: true });
     }
 
@@ -394,6 +452,26 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           .bind(memberId)
           .all<SubmissionRow>();
         return ok({ member, submissions: subs.results, members: await allMembers(env) });
+      }
+
+      if (sub === "backup-sheet" && method === "POST") {
+        if (!env.SHEETS_WEBHOOK_URL) {
+          return err(
+            "No Google Sheet is connected. Set the SHEETS_WEBHOOK_URL secret on the Pages project first.",
+            400
+          );
+        }
+        const all = await env.DB.prepare(
+          "SELECT * FROM submissions ORDER BY meetingDate ASC, id ASC"
+        ).all<SubmissionRow>();
+        const names = await memberNames(env);
+        const rows = all.results.map((r) => sheetRow(r, names));
+        // Chunk so a single request stays comfortably small for Apps Script.
+        for (let i = 0; i < rows.length; i += 500) {
+          const res = await pushToSheet(env.SHEETS_WEBHOOK_URL, rows.slice(i, i + 500));
+          if (!res.ok) return err(`Google Sheet rejected the backup (HTTP ${res.status}).`, 502);
+        }
+        return ok({ rows: rows.length });
       }
 
       if (sub === "goals" && method === "PUT") {
