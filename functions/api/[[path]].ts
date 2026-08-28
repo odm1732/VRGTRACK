@@ -520,6 +520,22 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     }
 
     // ── Notes (member or admin token) ─────────────────────────────────────
+    if (path === "notes/index" && method === "GET") {
+      const role = await verifyToken(bearer(request), env.ADMIN_PASSWORD);
+      if (!role) return err("Unauthorized.", 401);
+      const own = memberIdOf(role);
+      const requested = Number(url.searchParams.get("memberId"));
+      const memberId = own ?? requested;
+      if (!memberId) return err("memberId is required.");
+      if (own && requested && requested !== own) return err("You can only view your own notes.", 403);
+      const rows = await env.DB.prepare(
+        "SELECT meetingDate, updatedAt FROM notes WHERE memberId = ? ORDER BY meetingDate DESC"
+      )
+        .bind(memberId)
+        .all<{ meetingDate: string; updatedAt: string }>();
+      return ok(rows.results);
+    }
+
     if (path === "notes" && (method === "GET" || method === "PUT")) {
       const role = await verifyToken(bearer(request), env.ADMIN_PASSWORD);
       if (!role) return err("Unauthorized.", 401);

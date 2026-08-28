@@ -18,12 +18,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  History,
   LogOut,
   Megaphone,
   NotebookPen,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
@@ -36,6 +37,11 @@ function tuesdayOf(base: Date, offsetWeeks: number): string {
   d.setDate(d.getDate() - shift + offsetWeeks * 7);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
 }
 
 function formatISODate(iso: string): string {
@@ -182,6 +188,10 @@ export default function MeetingNotesPage() {
     { memberId: Number(whoId), meetingDate },
     { enabled: authed && whoId !== "" }
   );
+  const { data: savedWeeks } = trpc.notes.index.useQuery(
+    { memberId: Number(whoId) },
+    { enabled: authed && whoId !== "" }
+  );
 
   const [presentationNotes, setPresentationNotes] = useState("");
   const [educationalNotes, setEducationalNotes] = useState("");
@@ -203,27 +213,63 @@ export default function MeetingNotesPage() {
     setDirty(false);
   }, [authed, whoId, noteLoading, note, noteKey, loadedKey]);
 
-  const saveMutation = trpc.notes.save.useMutation({
-    onSuccess: () => {
-      setDirty(false);
-      toast.success("Notes saved.");
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const saveMutation = trpc.notes.save.useMutation();
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  const handleSave = () => {
-    if (whoId === "") {
-      toast.error("Select your name first.");
-      return;
-    }
-    saveMutation.mutate({
-      memberId: Number(whoId),
-      meetingDate,
-      presentationNotes,
-      educationalNotes,
-      memberNotes,
-    });
+  const doSave = useCallback(
+    async (silent: boolean) => {
+      if (whoId === "") {
+        if (!silent) toast.error("Select your name first.");
+        return;
+      }
+      setSaveState("saving");
+      try {
+        await saveMutation.mutateAsync({
+          memberId: Number(whoId),
+          meetingDate,
+          presentationNotes,
+          educationalNotes,
+          memberNotes,
+        });
+        setDirty(false);
+        setSaveState("saved");
+        if (!silent) toast.success("Notes saved.");
+      } catch (e) {
+        setSaveState("error");
+        if (!silent) toast.error(e instanceof Error ? e.message : "Save failed.");
+      }
+    },
+    [whoId, meetingDate, presentationNotes, educationalNotes, memberNotes, saveMutation]
+  );
+  const doSaveRef = useRef(doSave);
+  doSaveRef.current = doSave;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // Autosave ~1.5s after typing stops.
+  useEffect(() => {
+    if (!dirty || whoId === "") return;
+    const t = setTimeout(() => void doSaveRef.current(true), 1500);
+    return () => clearTimeout(t);
+  }, [dirty, whoId, presentationNotes, educationalNotes, memberNotes]);
+
+  /** Save any unsaved changes immediately, then run a navigation action. */
+  const flushThen = useCallback((action: () => void) => {
+    if (dirtyRef.current) void doSaveRef.current(true);
+    action();
+  }, []);
+
+  const handleSave = () => void doSave(false);
+
+  const jumpToWeek = (iso: string) => {
+    const currentTuesday = isoToDate(tuesdayOf(new Date(), 0));
+    const offset = Math.round((isoToDate(iso).getTime() - currentTuesday.getTime()) / (7 * 86_400_000));
+    flushThen(() => setWeekOffset(offset));
   };
+
+  // Until the stored note for this member+week has arrived, typing would be
+  // overwritten by the load — keep the fields disabled for that moment.
+  const noteReady = whoId !== "" && !noteLoading && note !== undefined && loadedKey === noteKey;
 
   const speakerThisWeek = agenda?.speakers.find((s) => s.date === meetingDate)?.name;
   const monthName = new Date(meetingDate).toLocaleString("en-US", { month: "long" });
@@ -264,7 +310,15 @@ export default function MeetingNotesPage() {
               <span className="hidden sm:inline">{downloading ? "Building…" : "Download PDF"}</span>
             </Button>
             <Button size="sm" onClick={handleSave} disabled={!authed || saveMutation.isPending}>
-              {saveMutation.isPending ? "Saving…" : dirty ? "Save*" : "Save"}
+              {saveState === "saving"
+                ? "Saving…"
+                : dirty
+                  ? "Save*"
+                  : saveState === "saved"
+                    ? "Saved ✓"
+                    : saveState === "error"
+                      ? "Retry Save"
+                      : "Save"}
             </Button>
           </div>
         </div>
@@ -286,10 +340,12 @@ export default function MeetingNotesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        clearToken();
-                        setSession(null);
-                      }}
+                      onClick={() =>
+                        flushThen(() => {
+                          clearToken();
+                          setSession(null);
+                        })
+                      }
                     >
                       <LogOut className="h-4 w-4 mr-1.5" />Sign out
                     </Button>
@@ -297,7 +353,7 @@ export default function MeetingNotesPage() {
                 ) : (
                   <>
                     <Label>Member (admin view)</Label>
-                    <Select value={adminWhoId} onValueChange={setAdminWhoId}>
+                    <Select value={adminWhoId} onValueChange={(v) => flushThen(() => setAdminWhoId(v))}>
                       <SelectTrigger><SelectValue placeholder="Select a member" /></SelectTrigger>
                       <SelectContent>
                         {(members ?? []).map((m) => (
@@ -309,13 +365,13 @@ export default function MeetingNotesPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setWeekOffset((v) => v - 1)}>
+                <Button variant="outline" size="sm" onClick={() => flushThen(() => setWeekOffset((v) => v - 1))}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <div className="text-sm text-center min-w-40">
                   <p className="font-medium">{formatISODate(meetingDate)}</p>
                   {weekOffset !== 0 && (
-                    <button className="text-xs text-primary hover:underline" onClick={() => setWeekOffset(0)}>
+                    <button className="text-xs text-primary hover:underline" onClick={() => flushThen(() => setWeekOffset(0))}>
                       Back to this week
                     </button>
                   )}
@@ -323,7 +379,7 @@ export default function MeetingNotesPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setWeekOffset((v) => v + 1)}
+                  onClick={() => flushThen(() => setWeekOffset((v) => v + 1))}
                   disabled={weekOffset >= 0}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -352,6 +408,7 @@ export default function MeetingNotesPage() {
                     rows={5}
                     placeholder="Notes on the presentation…"
                     value={presentationNotes}
+                    disabled={!noteReady}
                     onChange={(e) => { setPresentationNotes(e.target.value); setDirty(true); }}
                   />
                 </CardContent>
@@ -369,6 +426,7 @@ export default function MeetingNotesPage() {
                     rows={4}
                     placeholder="Notes on the training…"
                     value={educationalNotes}
+                    disabled={!noteReady}
                     onChange={(e) => { setEducationalNotes(e.target.value); setDirty(true); }}
                   />
                 </CardContent>
@@ -391,6 +449,7 @@ export default function MeetingNotesPage() {
                         rows={1}
                         className="min-h-9"
                         placeholder="—"
+                        disabled={!noteReady}
                         value={memberNotes[String(m.id)] ?? ""}
                         onChange={(e) => {
                           setMemberNotes((prev) => ({ ...prev, [String(m.id)]: e.target.value }));
@@ -402,11 +461,41 @@ export default function MeetingNotesPage() {
                 </CardContent>
               </Card>
 
-              <div className="flex justify-end">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Notes auto-save a moment after you stop typing.
+                </p>
                 <Button onClick={handleSave} disabled={saveMutation.isPending}>
-                  {saveMutation.isPending ? "Saving…" : "Save Notes"}
+                  {saveState === "saving" ? "Saving…" : "Save Notes"}
                 </Button>
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <History className="h-4 w-4" />Saved Weeks
+                  </CardTitle>
+                  <CardDescription>Jump back to any week you took notes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!savedWeeks || savedWeeks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No saved weeks yet — this week will appear here once you save.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {savedWeeks.map((w) => (
+                        <Button
+                          key={w.meetingDate}
+                          size="sm"
+                          variant={w.meetingDate === meetingDate ? "default" : "outline"}
+                          onClick={() => jumpToWeek(w.meetingDate)}
+                        >
+                          {formatISODate(w.meetingDate)}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </main>

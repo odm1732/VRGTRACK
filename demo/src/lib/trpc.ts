@@ -269,6 +269,9 @@ const router = {
       } satisfies NoteDoc;
     }),
     save: mutation((doc: NoteDoc) => api("notes", { method: "PUT", body: doc })),
+    index: query((input: { memberId: number }) =>
+      api<{ meetingDate: string; updatedAt: string }[]>(`notes/index?memberId=${input.memberId}`)
+    ),
   },
   agenda: {
     get: query(() => api<AgendaDoc>("agenda")),
