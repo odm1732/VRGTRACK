@@ -1,8 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { downloadAgendaPdf } from "@/lib/agendaPdf";
 import { trpc } from "@/lib/trpc";
-import { CalendarDays, ChevronLeft, Clock, MapPin, Megaphone, Users } from "lucide-react";
+import { CalendarDays, ChevronLeft, Clock, Download, MapPin, Megaphone, Users } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Link } from "wouter";
 
 function startOfToday(): Date {
@@ -26,6 +29,7 @@ function formatDate(iso: string): string {
 
 export default function AgendaPage() {
   const { data: agenda, isLoading } = trpc.agenda.get.useQuery();
+  const [downloading, setDownloading] = useState(false);
 
   const today = startOfToday();
   const upcomingSpeakers = (agenda?.speakers ?? [])
@@ -36,6 +40,18 @@ export default function AgendaPage() {
     .filter((e) => parseISODate(e.date) >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  const handleDownload = async () => {
+    if (!agenda) return;
+    setDownloading(true);
+    try {
+      await downloadAgendaPdf(agenda, upcomingSpeakers, upcomingEvents);
+    } catch {
+      toast.error("Could not build the PDF. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-40">
@@ -44,9 +60,15 @@ export default function AgendaPage() {
             <Link href="/"><ChevronLeft className="h-4 w-4 mr-1" />Home</Link>
           </Button>
           <span className="font-bold">Meeting Agenda</span>
-          <Button size="sm" asChild>
-            <Link href="/submit">Submit Report</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleDownload} disabled={downloading || !agenda}>
+              <Download className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">{downloading ? "Building…" : "Download PDF"}</span>
+            </Button>
+            <Button size="sm" asChild>
+              <Link href="/submit">Submit Report</Link>
+            </Button>
+          </div>
         </div>
       </header>
 
