@@ -79,9 +79,6 @@ export default function Home() {
           <h1 className="text-4xl font-bold tracking-tight">
             Valley Referral Group
           </h1>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            A group of friendly, active business professionals committed to weekly meetings — tracking referrals, one-to-ones, closed business, and visitors across the group.
-          </p>
           <div className="flex items-center justify-center gap-3 pt-2">
             <Button size="lg" asChild>
               <Link href="/submit">Submit Weekly Report</Link>
