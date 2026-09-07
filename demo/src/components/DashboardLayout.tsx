@@ -27,6 +27,7 @@ import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
   CalendarDays,
+  ShieldCheck,
   Calendar,
   Download,
   Eye,
@@ -51,6 +52,7 @@ const menuItems = [
   { icon: Download, label: "Export Data", path: "/dashboard/export" },
   { icon: Target, label: "Annual Goals", path: "/dashboard/goals" },
   { icon: CalendarDays, label: "Meeting Agenda", path: "/dashboard/agenda" },
+  { icon: ShieldCheck, label: "Admin Access", path: "/dashboard/admins" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -59,8 +61,10 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
 
 function SignInGate({ onSuccess }: { onSuccess: () => void }) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [useMaster, setUseMaster] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -71,7 +75,7 @@ function SignInGate({ onSuccess }: { onSuccess: () => void }) {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    loginMutation.mutate({ password });
+    loginMutation.mutate(useMaster ? { password } : { email, password });
   };
 
   return (
@@ -83,23 +87,37 @@ function SignInGate({ onSuccess }: { onSuccess: () => void }) {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-center">VRG Accountability</h1>
           <p className="text-sm text-muted-foreground text-center max-w-sm">
-            Enter the group admin password to access reports and member management.
+            Admin sign-in for reports, member management, and settings.
           </p>
         </div>
 
         <form onSubmit={handleLogin} className="w-full space-y-4">
+          {!useMaster && (
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-email">Email</Label>
+              <Input
+                id="admin-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                autoFocus
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label htmlFor="admin-password">Admin Password</Label>
+            <Label htmlFor="admin-password">{useMaster ? "Master Admin Password" : "Password"}</Label>
             <div className="relative">
               <Input
                 id="admin-password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Group admin password"
+                placeholder={useMaster ? "Master password" : "Your password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                autoFocus
               />
               <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowPassword((v) => !v)}>
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -111,10 +129,13 @@ function SignInGate({ onSuccess }: { onSuccess: () => void }) {
           </Button>
         </form>
 
-        <p className="text-xs text-muted-foreground text-center">
-          Submitting your weekly report doesn't require a password —{" "}
-          <a href="#/submit" className="text-primary hover:underline">go to the report form</a>.
-        </p>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+          onClick={() => setUseMaster((v) => !v)}
+        >
+          {useMaster ? "Sign in with email instead" : "Use the master password instead"}
+        </button>
       </div>
     </div>
   );

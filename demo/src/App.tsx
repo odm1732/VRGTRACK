@@ -15,6 +15,7 @@ import WeeklyReportPage from "./pages/dashboard/WeeklyReportPage";
 import MemberReportsPage from "./pages/dashboard/MemberReportsPage";
 import MemberDetailPage from "./pages/dashboard/MemberDetailPage";
 import AbsenceTrackingPage from "./pages/dashboard/AbsenceTrackingPage";
+import AdminAccessPage from "./pages/dashboard/AdminAccessPage";
 import AgendaEditorPage from "./pages/dashboard/AgendaEditorPage";
 import ManageMembersPage from "./pages/dashboard/ManageMembersPage";
 import ExportDataPage from "./pages/dashboard/ExportDataPage";
@@ -59,6 +60,9 @@ function Routes() {
       </Route>
       <Route path="/dashboard/agenda">
         <DashboardRoute><AgendaEditorPage /></DashboardRoute>
+      </Route>
+      <Route path="/dashboard/admins">
+        <DashboardRoute><AdminAccessPage /></DashboardRoute>
       </Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

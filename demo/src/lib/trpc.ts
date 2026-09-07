@@ -11,6 +11,8 @@ import {
   useDataVersion,
   type Member,
   type ParsedSubmission,
+  setAdminName,
+  type AdminUser,
   type AgendaDoc,
   type NoteDoc,
   type RawNoteRow,
@@ -168,12 +170,13 @@ const router = {
       setToken(r.token);
       return r;
     }),
-    login: mutation(async (input: { password: string }) => {
-      const r = await api<{ token: string; role: "admin" | "member" }>("login", {
+    login: mutation(async (input: { email?: string; password: string }) => {
+      const r = await api<{ token: string; role: "admin"; name: string }>("login", {
         method: "POST",
-        body: { password: input.password },
+        body: { email: input.email, password: input.password },
       });
       setToken(r.token);
+      setAdminName(r.name);
       return { success: true, role: r.role } as const;
     }),
   },
@@ -271,6 +274,19 @@ const router = {
     save: mutation((doc: NoteDoc) => api("notes", { method: "PUT", body: doc })),
     index: query((input: { memberId: number }) =>
       api<{ meetingDate: string; updatedAt: string }[]>(`notes/index?memberId=${input.memberId}`)
+    ),
+  },
+  admins: {
+    list: query(() => api<AdminUser[]>("admin/users")),
+    create: mutation((input: { name: string; email: string; password: string }) =>
+      api("admin/users", { method: "POST", body: input })
+    ),
+    remove: mutation((input: { id: number }) => api(`admin/users/${input.id}`, { method: "DELETE" })),
+    resetPassword: mutation((input: { id: number; password: string }) =>
+      api(`admin/users/${input.id}/reset-password`, { method: "POST", body: { password: input.password } })
+    ),
+    changeMyPassword: mutation((input: { currentPassword: string; newPassword: string }) =>
+      api("admin/change-password", { method: "POST", body: input })
     ),
   },
   agenda: {

@@ -17,9 +17,11 @@ This repository holds the live tracker and the original application it came from
 
 - **Public**: the home page scoreboard (`GET /api/summary`) and the weekly report form
   (`POST /api/submissions`) need no login — members just submit.
-- **Admin**: the dashboard (reports, member management, goals, export, agenda editing) is
-  behind a shared admin password (`ADMIN_PASSWORD`). `POST /api/login` issues a signed
-  30-day token carrying the role.
+- **Admin**: admins sign into the dashboard with their own email and password. Accounts
+  are managed on the dashboard's Admin Access page (add, remove, set passwords; each admin
+  can change their own). The `ADMIN_PASSWORD` secret remains a master-key fallback — the
+  sign-in screen has a "Use the master password instead" link — so access can always be
+  recovered. `POST /api/login` issues a signed 30-day token carrying the role.
 - **Members**: each member has their own password for the Meeting Notes page. On first
   sign-in they create it by presenting the group code (`MEMBER_PASSWORD`); after that it's
   name + personal password. Passwords are stored as salted PBKDF2 hashes; the session

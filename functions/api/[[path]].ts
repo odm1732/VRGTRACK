@@ -112,7 +112,7 @@ async function verifyToken(token: string | null, secret: string): Promise<Role |
   const [expStr, role, sigHex] = parts;
   const exp = Number(expStr);
   if (!Number.isFinite(exp) || exp < Date.now()) return null;
-  if (role !== "admin" && !/^m\d+$/.test(role)) return null;
+  if (role !== "admin" && !/^[am]\d+$/.test(role)) return null;
   if (sigHex.length !== 64 || /[^0-9a-f]/.test(sigHex)) return null;
   const sig = new Uint8Array(sigHex.match(/../g)!.map((h) => parseInt(h, 16)));
   const key = await hmacKey(secret);
@@ -126,7 +126,16 @@ async function verifyToken(token: string | null, secret: string): Promise<Role |
 }
 
 function memberIdOf(role: Role | null): number | null {
-  if (!role || role === "admin") return null;
+  if (!role || !/^m\d+$/.test(role)) return null;
+  return Number(role.slice(1));
+}
+
+function isAdminRole(role: Role | null): boolean {
+  return role === "admin" || (!!role && /^a\d+$/.test(role));
+}
+
+function adminUserIdOf(role: Role | null): number | null {
+  if (!role || !/^a\d+$/.test(role)) return null;
   return Number(role.slice(1));
 }
 
@@ -218,6 +227,14 @@ async function ensureReady(env: Env) {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updatedAt TEXT NOT NULL
+      )`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        passwordHash TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        lastSignedIn TEXT
       )`),
       env.DB.prepare(`CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -372,12 +389,33 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
 
     // ── Public ────────────────────────────────────────────────────────────
     if (path === "login" && method === "POST") {
-      const body = (await request.json().catch(() => ({}))) as { password?: string };
+      const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string };
       if (typeof body.password !== "string" || body.password.length === 0) {
         return err("Incorrect password.", 401);
       }
+
+      if (typeof body.email === "string" && body.email.trim() !== "") {
+        const email = body.email.trim().toLowerCase();
+        const user = await env.DB.prepare(
+          "SELECT id, name, email, passwordHash FROM users WHERE email = ?"
+        )
+          .bind(email)
+          .first<{ id: number; name: string; email: string; passwordHash: string }>();
+        if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+          return err("Incorrect email or password.", 401);
+        }
+        await env.DB.prepare("UPDATE users SET lastSignedIn = ? WHERE id = ?")
+          .bind(new Date().toISOString(), user.id)
+          .run();
+        return ok({
+          token: await issueToken(env.ADMIN_PASSWORD, `a${user.id}`),
+          role: "admin",
+          name: user.name,
+        });
+      }
+
       if (body.password !== env.ADMIN_PASSWORD) return err("Incorrect password.", 401);
-      return ok({ token: await issueToken(env.ADMIN_PASSWORD, "admin"), role: "admin" });
+      return ok({ token: await issueToken(env.ADMIN_PASSWORD, "admin"), role: "admin", name: "Master Admin" });
     }
 
     if (path === "member-login" && method === "POST") {
@@ -595,10 +633,83 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
 
     // ── Admin (Bearer token) ──────────────────────────────────────────────
     if (path.startsWith("admin/")) {
-      if ((await verifyToken(bearer(request), env.ADMIN_PASSWORD)) !== "admin") {
+      const adminRole = await verifyToken(bearer(request), env.ADMIN_PASSWORD);
+      if (!isAdminRole(adminRole)) {
         return err("Unauthorized.", 401);
       }
+      const selfAdminId = adminUserIdOf(adminRole);
       const sub = path.slice("admin/".length);
+
+      if (sub === "users" && method === "GET") {
+        const r = await env.DB.prepare(
+          "SELECT id, name, email, createdAt, lastSignedIn FROM users ORDER BY name"
+        ).all();
+        return ok(r.results);
+      }
+
+      if (sub === "users" && method === "POST") {
+        const b = (await request.json().catch(() => null)) as {
+          name?: string;
+          email?: string;
+          password?: string;
+        } | null;
+        if (!b?.name?.trim() || !b?.email?.trim()) return err("Name and email are required.");
+        if (!b.password || b.password.length < 8) return err("Password must be at least 8 characters.");
+        const email = b.email.trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err("Enter a valid email address.");
+        const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+        if (existing) return err("An admin with this email already exists.");
+        await env.DB.prepare(
+          "INSERT INTO users (name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?)"
+        )
+          .bind(b.name.trim(), email, await hashPassword(b.password), new Date().toISOString())
+          .run();
+        return ok({ success: true });
+      }
+
+      const userResetMatch = /^users\/(\d+)\/reset-password$/.exec(sub);
+      if (userResetMatch && method === "POST") {
+        const b = (await request.json().catch(() => null)) as { password?: string } | null;
+        if (!b?.password || b.password.length < 8) return err("Password must be at least 8 characters.");
+        const id = Number(userResetMatch[1]);
+        const target = await env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
+        if (!target) return err("Admin not found.", 404);
+        await env.DB.prepare("UPDATE users SET passwordHash = ? WHERE id = ?")
+          .bind(await hashPassword(b.password), id)
+          .run();
+        return ok({ success: true });
+      }
+
+      const userMatch = /^users\/(\d+)$/.exec(sub);
+      if (userMatch && method === "DELETE") {
+        const id = Number(userMatch[1]);
+        if (selfAdminId === id) return err("You can't remove your own account.");
+        await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+        return ok({ success: true });
+      }
+
+      if (sub === "change-password" && method === "POST") {
+        if (!selfAdminId) {
+          return err("The master password is set in Cloudflare, not here.", 400);
+        }
+        const b = (await request.json().catch(() => null)) as {
+          currentPassword?: string;
+          newPassword?: string;
+        } | null;
+        if (!b?.newPassword || b.newPassword.length < 8) {
+          return err("New password must be at least 8 characters.");
+        }
+        const me = await env.DB.prepare("SELECT passwordHash FROM users WHERE id = ?")
+          .bind(selfAdminId)
+          .first<{ passwordHash: string }>();
+        if (!me || !(await verifyPassword(b.currentPassword ?? "", me.passwordHash))) {
+          return err("Current password is incorrect.", 401);
+        }
+        await env.DB.prepare("UPDATE users SET passwordHash = ? WHERE id = ?")
+          .bind(await hashPassword(b.newPassword), selfAdminId)
+          .run();
+        return ok({ success: true });
+      }
 
       if (sub === "members" && method === "GET") return ok(await allMembers(env));
 

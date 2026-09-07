@@ -67,17 +67,46 @@ export function isAuthed(): boolean {
   return getToken() !== null;
 }
 
-export type Session = { role: "admin" } | { role: "member"; memberId: number };
+export type Session =
+  | { role: "admin"; adminUserId: number | null } // null = master password
+  | { role: "member"; memberId: number };
 
 /** Session encoded in the token (exp.role.signature), or null when signed out. */
 export function getSession(): Session | null {
   const t = getToken();
   if (!t) return null;
   const role = t.split(".")[1];
-  if (role === "admin") return { role: "admin" };
+  if (role === "admin") return { role: "admin", adminUserId: null };
+  if (/^a\d+$/.test(role)) return { role: "admin", adminUserId: Number(role.slice(1)) };
   if (/^m\d+$/.test(role)) return { role: "member", memberId: Number(role.slice(1)) };
   return null;
 }
+
+const ADMIN_NAME_KEY = "vrgtrack-admin-name";
+
+export function setAdminName(name: string) {
+  try {
+    localStorage.setItem(ADMIN_NAME_KEY, name);
+  } catch {
+    /* display-only convenience */
+  }
+}
+
+export function getAdminName(): string {
+  try {
+    return localStorage.getItem(ADMIN_NAME_KEY) || "Admin";
+  } catch {
+    return "Admin";
+  }
+}
+
+export type AdminUser = {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+  lastSignedIn: string | null;
+};
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
