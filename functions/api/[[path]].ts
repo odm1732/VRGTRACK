@@ -480,16 +480,41 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
 
     if (path === "summary" && method === "GET") {
       const now = new Date();
-      const year = now.getFullYear();
-      const yearFrom = new Date(year, 0, 1).toISOString();
-      const yearTo = new Date(year, 11, 31, 23, 59, 59).toISOString();
-      const monthFrom = new Date(year, now.getMonth(), 1).toISOString();
+      const year = now.getUTCFullYear();
+
+      // Year-to-date always covers the current year; only the month section moves.
+      const yearFrom = `${year}-01-01T00:00:00.000Z`;
+      const yearTo = `${year}-12-31T23:59:59.999Z`;
       const subs = await submissionsBetween(env, yearFrom, yearTo);
-      const monthSubs = subs.filter((s) => s.meetingDate >= monthFrom);
       const goals = await goalsForYear(env, year);
+
+      // ?month=YYYY-MM selects a past month; anything missing or malformed means this month.
+      const currentMonth = `${year}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const asked = url.searchParams.get("month");
+      const monthKey = asked && /^\d{4}-(0[1-9]|1[0-2])$/.test(asked) ? asked : currentMonth;
+      const mY = Number(monthKey.slice(0, 4));
+      const mM = Number(monthKey.slice(5, 7));
+      const lastDay = new Date(Date.UTC(mY, mM, 0)).getUTCDate();
+      const monthSubs = await submissionsBetween(
+        env,
+        `${monthKey}-01T00:00:00.000Z`,
+        `${monthKey}-${String(lastDay).padStart(2, "0")}T23:59:59.999Z`
+      );
+
+      // Oldest meeting on record, so the dashboard knows how far back it can page.
+      const oldest = await env.DB.prepare("SELECT MIN(meetingDate) AS d FROM submissions").first<{
+        d: string | null;
+      }>();
+
       return ok({
         year,
-        monthName: now.toLocaleString("en-US", { month: "long" }),
+        monthName: new Date(`${monthKey}-01T00:00:00.000Z`).toLocaleString("en-US", {
+          month: "long",
+          timeZone: "UTC",
+        }),
+        monthKey,
+        currentMonth,
+        earliestMonth: oldest?.d ? oldest.d.slice(0, 7) : currentMonth,
         ytd: totalsFor(subs),
         month: totalsFor(monthSubs),
         goals,

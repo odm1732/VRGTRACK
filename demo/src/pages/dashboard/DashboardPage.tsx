@@ -1,7 +1,15 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { BarChart3, DollarSign, Target, Users } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, DollarSign, Target, Users } from "lucide-react";
+import { useState } from "react";
+
+/** Step a YYYY-MM key by whole months, staying in UTC so no timezone can shift it. */
+function shiftMonth(key: string, delta: number) {
+  const d = new Date(Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 function StatCard({
   icon: Icon,
@@ -47,8 +55,12 @@ function StatCard({
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
   const { data: ytd, isLoading: ytdLoading } = trpc.goals.ytdSummary.useQuery();
-  const { data: month } = trpc.goals.monthSummary.useQuery();
+  const [selectedMonth, setSelectedMonth] = useState<string | undefined>(undefined);
+  const { data: month } = trpc.goals.monthSummary.useQuery({ month: selectedMonth });
   const year = new Date().getFullYear();
+
+  const isCurrentMonth = !month || month.monthKey >= month.currentMonth;
+  const canGoBack = !!month && month.monthKey > month.earliestMonth;
 
   const isLoading = statsLoading || ytdLoading;
 
@@ -79,7 +91,44 @@ export default function DashboardPage() {
 
           {month && (
             <div>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{month.monthName} (This Month)</h2>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  {month.monthName} {month.monthKey.slice(0, 4)}
+                  {isCurrentMonth ? " (This Month)" : ""}
+                </h2>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label="Previous month"
+                    disabled={!canGoBack}
+                    onClick={() => setSelectedMonth(shiftMonth(month.monthKey, -1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label="Next month"
+                    disabled={isCurrentMonth}
+                    onClick={() => setSelectedMonth(shiftMonth(month.monthKey, 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  {!isCurrentMonth && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setSelectedMonth(undefined)}
+                    >
+                      This month
+                    </Button>
+                  )}
+                </div>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard icon={Users} label="Referrals" value={month.month.referrals} color="text-blue-500" />
                 <StatCard icon={Target} label="One-to-Ones" value={month.month.oneToOnes} color="text-purple-500" />

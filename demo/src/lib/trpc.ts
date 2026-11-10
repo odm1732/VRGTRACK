@@ -135,12 +135,19 @@ type RawSubmission = RawTypes["submission"];
 type SummaryPayload = {
   year: number;
   monthName: string;
+  /** The month these `month` totals cover, as YYYY-MM. */
+  monthKey: string;
+  /** The month we are actually in, so the dashboard knows when it is showing "this month". */
+  currentMonth: string;
+  /** Month of the oldest meeting on record, so paging back can stop there. */
+  earliestMonth: string;
   ytd: { referrals: number; oneToOnes: number; money: number; visitors: number };
   month: { referrals: number; oneToOnes: number; money: number; visitors: number };
   goals: { year: number; referrals: number; oneToOnes: number; money: number; visitors: number } | null;
 };
 
-const fetchSummary = () => api<SummaryPayload>("summary");
+const fetchSummary = (month?: string) =>
+  api<SummaryPayload>(month ? `summary?month=${encodeURIComponent(month)}` : "summary");
 
 async function fetchReport(fromDate: Date, toDate: Date) {
   const q = `from=${encodeURIComponent(fromDate.toISOString())}&to=${encodeURIComponent(toDate.toISOString())}`;
@@ -223,11 +230,14 @@ const router = {
       const s = await fetchSummary();
       return { ytd: s.ytd, goals: s.goals ? { ...s.goals, money: Number(s.goals.money) } : null };
     }),
-    monthSummary: query(async () => {
-      const s = await fetchSummary();
+    monthSummary: query(async (input?: { month?: string }) => {
+      const s = await fetchSummary(input?.month);
       return {
         month: s.month,
         monthName: s.monthName,
+        monthKey: s.monthKey,
+        currentMonth: s.currentMonth,
+        earliestMonth: s.earliestMonth,
         goals: s.goals ? { ...s.goals, money: Number(s.goals.money) } : null,
       };
     }),
