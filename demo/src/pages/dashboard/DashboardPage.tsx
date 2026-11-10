@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
-import { BarChart3, ChevronLeft, ChevronRight, DollarSign, Target, Users } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, ClipboardList, DollarSign, Target, Users } from "lucide-react";
 import { useState } from "react";
 
 /** Step a YYYY-MM key by whole months, staying in UTC so no timezone can shift it. */
@@ -129,7 +129,8 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <StatCard icon={ClipboardList} label="Submissions" value={month.month.submissions} color="text-slate-500" />
                 <StatCard icon={Users} label="Referrals" value={month.month.referrals} color="text-blue-500" />
                 <StatCard icon={Target} label="One-to-Ones" value={month.month.oneToOnes} color="text-purple-500" />
                 <StatCard icon={DollarSign} label="Money Received" value={month.month.money} unit="$" color="text-green-500" />

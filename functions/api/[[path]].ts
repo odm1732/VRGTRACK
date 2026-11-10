@@ -46,6 +46,7 @@ function parseJsonSafe<T>(val: string | null | undefined, fallback: T): T {
 }
 
 function totalsFor(rows: SubmissionRow[]) {
+  const submissions = rows.length;
   let referrals = 0;
   let oneToOnes = 0;
   let money = 0;
@@ -62,7 +63,7 @@ function totalsFor(rows: SubmissionRow[]) {
     );
     visitors += s.visitorsCount || 0;
   }
-  return { referrals, oneToOnes, money, visitors };
+  return { submissions, referrals, oneToOnes, money, visitors };
 }
 
 type SubmissionRow = {

@@ -141,8 +141,8 @@ type SummaryPayload = {
   currentMonth: string;
   /** Month of the oldest meeting on record, so paging back can stop there. */
   earliestMonth: string;
-  ytd: { referrals: number; oneToOnes: number; money: number; visitors: number };
-  month: { referrals: number; oneToOnes: number; money: number; visitors: number };
+  ytd: { submissions: number; referrals: number; oneToOnes: number; money: number; visitors: number };
+  month: { submissions: number; referrals: number; oneToOnes: number; money: number; visitors: number };
   goals: { year: number; referrals: number; oneToOnes: number; money: number; visitors: number } | null;
 };
 
