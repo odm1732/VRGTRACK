@@ -180,3 +180,48 @@
     }
   }
 }
+/* Printing a document from the Documents page. The card being printed is
+   tagged with data-print-area just before window.print() runs; everything
+   else on the page — sidebar, headings, the other document — is hidden.
+   Hiding by visibility rather than display keeps the card's own layout
+   intact, so the document flows and paginates as written. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  [data-print-area],
+  [data-print-area] * {
+    visibility: visible;
+  }
+
+  [data-print-area] [data-print-hide],
+  [data-print-area] [data-print-hide] * {
+    visibility: hidden;
+    display: none !important;
+  }
+
+  [data-print-area] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+    color: #000;
+  }
+
+  /* Keep a role or numbered step from splitting across a page break. */
+  [data-print-area] section,
+  [data-print-area] li {
+    break-inside: avoid;
+  }
+
+  @page {
+    margin: 0.75in;
+  }
+}

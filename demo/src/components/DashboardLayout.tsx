@@ -32,6 +32,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileText,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -52,6 +53,7 @@ const menuItems = [
   { icon: Download, label: "Export Data", path: "/dashboard/export" },
   { icon: Target, label: "Annual Goals", path: "/dashboard/goals" },
   { icon: CalendarDays, label: "Meeting Agenda", path: "/dashboard/agenda" },
+  { icon: FileText, label: "Documents", path: "/dashboard/documents" },
   { icon: ShieldCheck, label: "Admin Access", path: "/dashboard/admins" },
 ];
 

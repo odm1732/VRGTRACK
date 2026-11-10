@@ -20,6 +20,7 @@ import AgendaEditorPage from "./pages/dashboard/AgendaEditorPage";
 import ManageMembersPage from "./pages/dashboard/ManageMembersPage";
 import ExportDataPage from "./pages/dashboard/ExportDataPage";
 import GoalsPage from "./pages/dashboard/GoalsPage";
+import DocumentsPage from "./pages/dashboard/DocumentsPage";
 
 function DashboardRoute({ children }: { children: React.ReactNode }) {
   return <DashboardLayout>{children}</DashboardLayout>;
@@ -60,6 +61,9 @@ function Routes() {
       </Route>
       <Route path="/dashboard/agenda">
         <DashboardRoute><AgendaEditorPage /></DashboardRoute>
+      </Route>
+      <Route path="/dashboard/documents">
+        <DashboardRoute><DocumentsPage /></DashboardRoute>
       </Route>
       <Route path="/dashboard/admins">
         <DashboardRoute><AdminAccessPage /></DashboardRoute>
